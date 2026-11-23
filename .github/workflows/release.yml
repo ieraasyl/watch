@@ -1,0 +1,118 @@
+name: Release binaries
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, such as v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-binaries-${{ inputs.tag || github.ref }}
+
+jobs:
+  build:
+    if: github.event_name == 'pull_request' || github.ref_name == github.event.repository.default_branch
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    env:
+      ASSET: watch-${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: '1.100.0'
+          targets: ${{ matrix.target }}
+      - name: Install the musl C compiler
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          printf 'CC_%s=musl-gcc\n' "${TARGET//-/_}" >> "$GITHUB_ENV"
+          printf 'RUSTFLAGS=-C target-feature=+crt-static\n' >> "$GITHUB_ENV"
+      - name: Build and archive watch
+        run: |
+          cargo build --release --locked --target "$TARGET"
+          mkdir -p "dist/$ASSET"
+          install -m 755 "target/$TARGET/release/watch" "dist/$ASSET/watch"
+          install -m 644 LICENSE "dist/$ASSET/LICENSE"
+          tar -czf "dist/$ASSET.tar.gz" -C dist "$ASSET"
+      - name: Test the packaged binary
+        run: |
+          mkdir -p "$RUNNER_TEMP/watch-smoke/media"
+          tar -xzf "dist/$ASSET.tar.gz" -C "$RUNNER_TEMP/watch-smoke"
+          binary="$RUNNER_TEMP/watch-smoke/$ASSET/watch"
+          version=$("$binary" --version)
+          if [[ -n "$RELEASE_TAG" && "$version" != "watch ${RELEASE_TAG#v}" ]]; then
+            echo "Release tag $RELEASE_TAG does not match $version"
+            exit 1
+          fi
+          touch "$RUNNER_TEMP/watch-smoke/media/Show - 01.mkv"
+          listing=$("$binary" --config config.example.toml --data-dir "$RUNNER_TEMP/watch-smoke/history" \
+            --root "$RUNNER_TEMP/watch-smoke/media" list)
+          [[ "$listing" == *"Episode 01  [Unwatched]"* ]]
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            headers=$(readelf -l "$binary")
+            [[ "$headers" != *INTERP* ]]
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ASSET }}
+          path: dist/${{ env.ASSET }}.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  attach:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          pattern: watch-*
+          merge-multiple: true
+          path: dist
+      - name: Attach archives and checksums to the draft
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          draft=$(gh release view --json isDraft --jq .isDraft -- "$RELEASE_TAG")
+          if [[ "$draft" != "true" ]]; then
+            echo "Create a draft for $RELEASE_TAG before running this workflow."
+            exit 1
+          fi
+          sha256sum watch-*.tar.gz > SHA256SUMS
+          gh release upload --clobber -- "$RELEASE_TAG" watch-*.tar.gz SHA256SUMS
