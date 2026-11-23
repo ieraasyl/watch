@@ -83,17 +83,34 @@ impl Store {
     }
 
     pub fn save(&self, path: &Path, progress: &Progress) -> Result<()> {
+        self.write_progress(path, progress, false)
+    }
+
+    pub fn save_playback(&self, path: &Path, progress: &Progress) -> Result<()> {
+        self.write_progress(path, progress, true)
+    }
+
+    fn write_progress(
+        &self,
+        path: &Path,
+        progress: &Progress,
+        preserve_watched: bool,
+    ) -> Result<()> {
         self.0.execute(
             "INSERT INTO progress (path, position, duration, watched, updated)
              VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(path) DO UPDATE SET position=excluded.position,
-             duration=excluded.duration, watched=excluded.watched, updated=excluded.updated",
+             ON CONFLICT(path) DO UPDATE SET
+                 position=excluded.position,
+                 duration=excluded.duration,
+                 watched=excluded.watched OR (?6 AND progress.watched),
+                 updated=excluded.updated",
             params![
                 path.as_os_str().as_bytes(),
                 progress.position,
                 progress.duration,
                 progress.watched,
-                progress.updated
+                progress.updated,
+                preserve_watched,
             ],
         )?;
         Ok(())
@@ -112,7 +129,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persists_progress_and_replaces_watched_state() {
+    fn persists_progress_and_preserves_watched_until_cleared() {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("history.sqlite3");
         let path = Path::new("/Movies/quote's episode.mkv");
@@ -139,8 +156,22 @@ mod tests {
                 },
             )
             .unwrap();
+        store
+            .save_playback(
+                path,
+                &Progress {
+                    position: 12.0,
+                    duration: 120.0,
+                    ..Progress::default()
+                },
+            )
+            .unwrap();
         let saved = store.all().unwrap();
         assert!(saved[path].watched);
+        assert_eq!(saved[path].position, 12.0);
         assert_eq!(saved.len(), 1);
+
+        store.save(path, &Progress::default()).unwrap();
+        assert!(!store.all().unwrap()[path].watched);
     }
 }

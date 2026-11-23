@@ -184,7 +184,7 @@ fn save(
     progress.updated = db::now();
     progress.watched =
         eof || (progress.duration > 0.0 && progress.position / progress.duration >= threshold);
-    store.save(&media.path, progress)
+    store.save_playback(&media.path, progress)
 }
 
 fn apply_event(
@@ -265,7 +265,8 @@ mod tests {
             "mp.add_timeout(0.4, function() mp.commandv('quit') end)",
         )
         .unwrap();
-        std::fs::write(&wrapper, "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null --script=\"${0%/*}/quit.lua\" \"$@\"\n").unwrap();
+        let quit_early = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null --script=\"${0%/*}/quit.lua\" \"$@\"\n";
+        std::fs::write(&wrapper, quit_early).unwrap();
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let media = crate::library::parse(audio, None);
         let config = Config {
@@ -281,17 +282,21 @@ mod tests {
         let partial = store.all().unwrap()[&media.path].clone();
         assert!(!partial.watched);
         assert!(partial.position > previous.position);
-        std::fs::write(
-            &wrapper,
-            "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null \"$@\"\n",
-        )
-        .unwrap();
+        let play_through = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null \"$@\"\n";
+        std::fs::write(&wrapper, play_through).unwrap();
         assert!(play(&media, &partial, &config, &store).unwrap());
         let history = store.all().unwrap();
         let saved = &history[&media.path];
         assert!(saved.watched);
         assert!(saved.position >= 0.25);
         assert!(saved.duration > 0.9);
+
+        std::fs::write(&wrapper, quit_early).unwrap();
+        assert!(!play(&media, saved, &config, &store).unwrap());
+        assert!(!play(&media, &Progress::default(), &config, &store).unwrap());
+        assert!(store.all().unwrap()[&media.path].watched);
+
+        std::fs::write(&wrapper, play_through).unwrap();
         let missing = Media {
             path: dir.path().join("missing.mkv"),
             ..media

@@ -58,9 +58,10 @@ both the player and CLI.
 Continue watching appears first when there are unfinished videos. Progress is
 saved every five seconds and when playback ends. A video becomes watched at
 natural completion or at 95% of its duration, whichever comes first. Replaying
-a watched video starts from the beginning. After natural completion, the browser
-offers the next unwatched regular episode in the same season; it does not
-automatically start playback. Specials are excluded from that sequence.
+a watched video starts from the beginning and preserves its watched status.
+After natural completion, the browser offers the next unwatched regular episode
+in the same season and waits for confirmation before playing it. Specials are
+excluded from that sequence.
 
 `watch resume` picks the most recently updated unfinished video still present
 in the library. If none exists, it plays the next unwatched episode
@@ -123,9 +124,9 @@ cargo test real_mpv -- --ignored  # Optional real playback test; requires mpv
 ```
 
 The mpv test generates a silent audio fixture and uses null audio/video outputs
-to check quitting, saved progress, resuming, completion, and playback errors
-without opening a window or touching your library. CI tests stable Rust and
-Rust 1.89 on macOS and Linux, plus real mpv playback on Linux. A dependency
+to check quitting, saved progress, resuming, completion, rewatches, and playback
+errors without opening a window or touching your library. CI tests stable Rust
+and Rust 1.89 on macOS and Linux, plus real mpv playback on Linux. A dependency
 audit runs weekly and on pull requests that change dependencies.
 
 MIT licensed.
