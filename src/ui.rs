@@ -371,7 +371,7 @@ impl Browser {
         };
         frame.render_widget(
             Paragraph::new(search)
-                .block(Block::bordered().title(" watch "))
+                .block(Block::bordered().title(" wvd "))
                 .style(Style::default().fg(ACCENT)),
             rows[0],
         );

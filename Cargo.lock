@@ -1263,26 +1263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
-name = "watch-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crossterm",
- "ctrlc",
- "directories",
- "nucleo-matcher",
- "ratatui",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
- "walkdir",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1333,6 +1313,26 @@ name = "winnow"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
+
+[[package]]
+name = "wvd"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "ctrlc",
+ "directories",
+ "nucleo-matcher",
+ "ratatui",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "walkdir",
+]
 
 [[package]]
 name = "zmij"

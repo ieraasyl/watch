@@ -34,7 +34,7 @@ pub struct Paths {
 
 impl Paths {
     pub fn new(config: Option<PathBuf>, data_dir: Option<PathBuf>) -> Result<Self> {
-        let project = ProjectDirs::from("", "", "watch-cli")
+        let project = ProjectDirs::from("", "", "wvd")
             .context("Could not determine your application directories")?;
         Ok(Self {
             config: config.unwrap_or_else(|| project.config_dir().join("config.toml")),

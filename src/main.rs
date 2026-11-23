@@ -17,7 +17,7 @@ use std::{
 
 #[derive(Parser)]
 #[command(
-    name = "watch",
+    name = "wvd",
     version,
     about = "Browse and resume your local media library"
 )]
@@ -49,7 +49,7 @@ enum Command {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("watch: {error:#}");
+        eprintln!("wvd: {error:#}");
         std::process::exit(1);
     }
 }
@@ -71,7 +71,7 @@ fn run() -> Result<()> {
     }
     let library = Library::scan(&config);
     for warning in &library.warnings {
-        eprintln!("watch: {warning}");
+        eprintln!("wvd: {warning}");
     }
     let store = db::Store::open(&paths.database)?;
     let progress = store.all()?;
@@ -82,13 +82,13 @@ fn run() -> Result<()> {
         };
     }
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        bail!("The browser needs an interactive terminal. Use `watch list` to print your library");
+        bail!("The browser needs an interactive terminal. Use `wvd list` to print your library");
     }
     ctrlc::set_handler(|| player::INTERRUPTED.store(true, Ordering::Relaxed))?;
     let mut browser = ui::Browser::new(cli.query.unwrap_or_default());
     let mut action = if matches!(cli.command, Some(Command::Resume)) {
         let candidate = resume_candidate(&library, &progress)
-            .context("Nothing to resume yet. Run `watch` and play something first")?;
+            .context("Nothing to resume yet. Run `wvd` and play something first")?;
         ui::Action::Play {
             media: candidate,
             restart: false,

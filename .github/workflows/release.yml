@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag, such as v0.1.0
+        description: Existing release tag, such as v0.2.0
         required: true
         type: string
 
@@ -39,7 +39,7 @@ jobs:
             target: x86_64-unknown-linux-musl
     runs-on: ${{ matrix.runner }}
     env:
-      ASSET: watch-${{ matrix.platform }}
+      ASSET: wvd-${{ matrix.platform }}
       TARGET: ${{ matrix.target }}
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
@@ -58,26 +58,26 @@ jobs:
           sudo apt-get install -y musl-tools
           printf 'CC_%s=musl-gcc\n' "${TARGET//-/_}" >> "$GITHUB_ENV"
           printf 'RUSTFLAGS=-C target-feature=+crt-static\n' >> "$GITHUB_ENV"
-      - name: Build and archive watch
+      - name: Build and archive wvd
         run: |
           cargo build --release --locked --target "$TARGET"
           mkdir -p "dist/$ASSET"
-          install -m 755 "target/$TARGET/release/watch" "dist/$ASSET/watch"
+          install -m 755 "target/$TARGET/release/wvd" "dist/$ASSET/wvd"
           install -m 644 LICENSE "dist/$ASSET/LICENSE"
           tar -czf "dist/$ASSET.tar.gz" -C dist "$ASSET"
       - name: Test the packaged binary
         run: |
-          mkdir -p "$RUNNER_TEMP/watch-smoke/media"
-          tar -xzf "dist/$ASSET.tar.gz" -C "$RUNNER_TEMP/watch-smoke"
-          binary="$RUNNER_TEMP/watch-smoke/$ASSET/watch"
+          mkdir -p "$RUNNER_TEMP/wvd-smoke/media"
+          tar -xzf "dist/$ASSET.tar.gz" -C "$RUNNER_TEMP/wvd-smoke"
+          binary="$RUNNER_TEMP/wvd-smoke/$ASSET/wvd"
           version=$("$binary" --version)
-          if [[ -n "$RELEASE_TAG" && "$version" != "watch ${RELEASE_TAG#v}" ]]; then
+          if [[ -n "$RELEASE_TAG" && "$version" != "wvd ${RELEASE_TAG#v}" ]]; then
             echo "Release tag $RELEASE_TAG does not match $version"
             exit 1
           fi
-          touch "$RUNNER_TEMP/watch-smoke/media/Show - 01.mkv"
-          listing=$("$binary" --config config.example.toml --data-dir "$RUNNER_TEMP/watch-smoke/history" \
-            --root "$RUNNER_TEMP/watch-smoke/media" list)
+          touch "$RUNNER_TEMP/wvd-smoke/media/Show - 01.mkv"
+          listing=$("$binary" --config config.example.toml --data-dir "$RUNNER_TEMP/wvd-smoke/history" \
+            --root "$RUNNER_TEMP/wvd-smoke/media" list)
           [[ "$listing" == *"Episode 01  [Unwatched]"* ]]
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             headers=$(readelf -l "$binary")
@@ -99,7 +99,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          pattern: watch-*
+          pattern: wvd-*
           merge-multiple: true
           path: dist
       - name: Attach archives and checksums to the draft
@@ -114,5 +114,5 @@ jobs:
             echo "Create a draft for $RELEASE_TAG before running this workflow."
             exit 1
           fi
-          sha256sum watch-*.tar.gz > SHA256SUMS
-          gh release upload --clobber -- "$RELEASE_TAG" watch-*.tar.gz SHA256SUMS
+          sha256sum wvd-*.tar.gz > SHA256SUMS
+          gh release upload --clobber -- "$RELEASE_TAG" wvd-*.tar.gz SHA256SUMS

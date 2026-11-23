@@ -1,14 +1,14 @@
 [package]
-name = "watch-cli"
-version = "0.1.0"
+name = "wvd"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.100.0"
 description = "Browse and resume your local media library from the terminal"
 license = "MIT"
-repository = "https://github.com/ieraasyl/watch"
+repository = "https://github.com/ieraasyl/wvd"
 
 [[bin]]
-name = "watch"
+name = "wvd"
 path = "src/main.rs"
 
 [dependencies]
