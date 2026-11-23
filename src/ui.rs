@@ -36,6 +36,7 @@ const ACCENT: Color = Color::Cyan;
 
 pub struct Browser {
     query: String,
+    matcher: Matcher,
     searching: bool,
     episodes_focus: bool,
     extras: bool,
@@ -88,6 +89,7 @@ impl Browser {
     pub fn new(query: String) -> Self {
         Self {
             query,
+            matcher: Matcher::default(),
             searching: false,
             episodes_focus: false,
             extras: false,
@@ -106,29 +108,17 @@ impl Browser {
             .selected()
             .and_then(|i| self.groups.get(i))
             .map(|g| g.name.clone());
-        self.groups = library
-            .groups
-            .iter()
-            .map(|(name, items)| Group {
+        let pattern = Pattern::parse(&self.query, CaseMatching::Ignore, Normalization::Smart);
+        // The matcher's stable sort keeps titles with equal scores in library order.
+        self.groups = pattern
+            .match_list(library.groups.keys(), &mut self.matcher)
+            .into_iter()
+            .map(|(name, _)| Group {
                 name: name.clone(),
-                items: items.clone(),
+                items: library.groups[name].clone(),
                 continuing: false,
             })
             .collect();
-        let pattern = Pattern::parse(&self.query, CaseMatching::Ignore, Normalization::Smart);
-        let mut matcher = Matcher::new(nucleo_matcher::Config::DEFAULT);
-        let matches = pattern.match_list(self.groups.iter().map(|g| g.name.as_str()), &mut matcher);
-        let scores: HashMap<_, _> = matches
-            .into_iter()
-            .map(|(name, score)| (name.to_owned(), score))
-            .collect();
-        self.groups
-            .retain(|group| scores.contains_key(group.name.as_str()));
-        self.groups.sort_by(|a, b| {
-            scores[b.name.as_str()]
-                .cmp(&scores[a.name.as_str()])
-                .then(a.name.cmp(&b.name))
-        });
         if self.query.is_empty() {
             let mut continuing: Vec<_> = library
                 .items()
@@ -577,13 +567,26 @@ mod tests {
             extra: true,
             ..regular.clone()
         };
+        let mut groups =
+            std::collections::BTreeMap::from([("Show".to_owned(), vec![regular, extra])]);
+        groups.extend(["A Shadow", "B Shadow"].map(|name| {
+            let media = crate::library::parse(PathBuf::from(format!("{name} - 02.mkv")), None);
+            (name.to_owned(), vec![media])
+        }));
         let library = Library {
-            groups: [("Show".to_owned(), vec![regular, extra])].into(),
+            groups,
             warnings: vec![],
         };
         let mut browser = Browser::new("shw".to_owned());
         browser.refresh(&library, &HashMap::new());
-        assert_eq!(browser.groups.len(), 1);
+        assert_eq!(
+            browser
+                .groups
+                .iter()
+                .map(|group| group.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Show", "A Shadow", "B Shadow"]
+        );
         assert_eq!(browser.items().len(), 1);
         assert!(!browser.selected().unwrap().extra);
         browser.extras = true;
