@@ -3,8 +3,8 @@ use crate::{
     db::{self, Progress, Store},
     library::Media,
 };
-use anyhow::{bail, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, bail};
+use serde_json::{Value, json};
 use std::{
     fs::File,
     io::{Read, Write},
@@ -164,12 +164,12 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
     if let Some(error) = playback_error {
         bail!("Playback failed: {error}\n{}", read_log(&log_path));
     }
-    if !eof && !INTERRUPTED.load(Ordering::Relaxed) {
-        if let Some(status) = player.0.try_wait()? {
-            if !status.success() {
-                bail!("mpv exited with {status}: {}", read_log(&log_path));
-            }
-        }
+    if !eof
+        && !INTERRUPTED.load(Ordering::Relaxed)
+        && let Some(status) = player.0.try_wait()?
+        && !status.success()
+    {
+        bail!("mpv exited with {status}: {}", read_log(&log_path));
     }
     Ok(eof)
 }

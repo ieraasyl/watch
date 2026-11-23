@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use directories::{BaseDirs, ProjectDirs};
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -15,9 +15,11 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            media_dirs: vec![BaseDirs::new()
-                .map(|d| d.home_dir().join("Movies"))
-                .unwrap_or_else(|| PathBuf::from("Movies"))],
+            media_dirs: vec![
+                BaseDirs::new()
+                    .map(|d| d.home_dir().join("Movies"))
+                    .unwrap_or_else(|| PathBuf::from("Movies")),
+            ],
             player: PathBuf::from("mpv"),
             completion_threshold: 0.95,
             titles: BTreeMap::new(),

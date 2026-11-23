@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::{
     collections::HashMap,
     os::unix::ffi::OsStrExt,

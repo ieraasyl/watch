@@ -4,7 +4,7 @@ mod library;
 mod player;
 mod ui;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use config::{Config, Paths};
 use library::Library;

@@ -7,19 +7,22 @@ use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        Clear as ClearScreen, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode,
+    },
 };
 use nucleo_matcher::{
-    pattern::{CaseMatching, Normalization, Pattern},
     Matcher,
+    pattern::{CaseMatching, Normalization, Pattern},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    Frame, Terminal,
 };
 use std::{
     collections::HashMap,
@@ -64,8 +67,11 @@ impl Session {
         let terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
         let mut session = Self { terminal };
         enable_raw_mode()?;
-        execute!(session.terminal.backend_mut(), EnterAlternateScreen)?;
-        session.terminal.clear()?;
+        execute!(
+            session.terminal.backend_mut(),
+            EnterAlternateScreen,
+            ClearScreen(ClearType::All)
+        )?;
         Ok(session)
     }
 }

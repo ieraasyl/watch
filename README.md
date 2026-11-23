@@ -5,7 +5,7 @@ library, play in mpv, and pick up where you left off.
 
 ## Install
 
-Requires macOS or Linux, a recent stable Rust toolchain, and
+Requires macOS or Linux, Rust 1.89 or later, and
 [mpv](https://mpv.io/installation/). On macOS:
 
 ```sh
@@ -124,7 +124,8 @@ cargo test real_mpv -- --ignored  # Optional real playback test; requires mpv
 
 The mpv test generates a silent audio fixture and uses null audio/video outputs
 to check quitting, saved progress, resuming, completion, and playback errors
-without opening a window or touching your library. CI runs checks on macOS and
-Linux, plus the mpv integration test on Linux.
+without opening a window or touching your library. CI tests stable Rust and
+Rust 1.89 on macOS and Linux, plus real mpv playback on Linux. A dependency
+audit runs weekly and on pull requests that change dependencies.
 
 MIT licensed.
