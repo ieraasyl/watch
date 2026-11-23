@@ -39,6 +39,7 @@ pub struct Browser {
     groups: Vec<Group>,
     group_state: ListState,
     episode_state: ListState,
+    jump_notice: Option<&'static str>,
     pub notice: String,
     pub next: Option<Media>,
 }
@@ -87,6 +88,7 @@ impl Browser {
             groups: Vec::new(),
             group_state: ListState::default(),
             episode_state: ListState::default(),
+            jump_notice: None,
             notice: String::new(),
             next: None,
         }
@@ -206,6 +208,7 @@ impl Browser {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+            self.jump_notice = None;
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 return Ok(Action::Quit);
             }
@@ -255,6 +258,8 @@ impl Browser {
                 KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
                 KeyCode::Home | KeyCode::Char('g') => self.move_selection(isize::MIN),
                 KeyCode::End | KeyCode::Char('G') => self.move_selection(isize::MAX),
+                KeyCode::Char('n') => self.jump_unwatched(&history, false),
+                KeyCode::Char('N') if self.episodes_focus => self.jump_unwatched(&history, true),
                 KeyCode::Char('e') => {
                     self.extras = !self.extras;
                     self.episode_state.select(Some(0));
@@ -317,6 +322,39 @@ impl Browser {
         if !self.episodes_focus && next != current {
             self.episode_state.select(Some(0));
             self.clamp_episode();
+        }
+    }
+
+    fn jump_unwatched(&mut self, history: &HashMap<PathBuf, Progress>, backward: bool) {
+        let items = self.items();
+        let unwatched = |item: &&Media| !history.get(&item.path).is_some_and(|p| p.watched);
+        let current = self
+            .episode_state
+            .selected()
+            .filter(|_| self.episodes_focus);
+        let target = if backward {
+            items
+                .iter()
+                .take(current.unwrap_or(items.len()))
+                .rposition(unwatched)
+        } else {
+            let start = current.map_or(0, |i| i + 1);
+            items
+                .iter()
+                .skip(start)
+                .position(unwatched)
+                .map(|i| start + i)
+        };
+
+        if let Some(index) = target {
+            self.episode_state.select(Some(index));
+            self.episodes_focus = true;
+        } else {
+            self.jump_notice = Some(match (self.episodes_focus, backward) {
+                (false, _) => "No unwatched videos in this list",
+                (true, true) => "No unwatched videos above",
+                (true, false) => "No unwatched videos below",
+            });
         }
     }
 
@@ -433,19 +471,29 @@ impl Browser {
             .map(|m| m.path.display().to_string())
             .unwrap_or_default();
         let warning = if self.notice.is_empty() {
-            library.warnings.first().cloned().unwrap_or_default()
+            library.warnings.first().map_or("", String::as_str)
         } else {
-            self.notice.clone()
+            &self.notice
         };
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(detail),
-                Line::from(Span::styled(warning, Style::default().fg(Color::Yellow))),
+                Line::from(Span::styled(
+                    self.jump_notice.unwrap_or(warning),
+                    Style::default().fg(Color::Yellow),
+                )),
             ])
             .block(Block::bordered().title(" File ")),
             rows[2],
         );
-        frame.render_widget(Paragraph::new("↑↓/jk move · Tab switch · Enter select/play · / search · e extras\nw watched · r restart · c continue · q quit").style(Style::default().fg(Color::DarkGray)), rows[3]);
+        frame.render_widget(
+            Paragraph::new(concat!(
+                "↑↓/jk move · Tab switch · Enter select/play · / search · e extras\n",
+                "n/N unwatched · w watched · r restart · c continue · q quit"
+            ))
+            .style(Style::default().fg(Color::DarkGray)),
+            rows[3],
+        );
         if let Some(next) = &self.next {
             let area = centered(frame.area(), 64, 7);
             frame.render_widget(Clear, area);
@@ -537,5 +585,87 @@ mod tests {
         browser.query = "no match".to_owned();
         browser.refresh(&library, &HashMap::new());
         assert!(browser.selected().is_none());
+    }
+
+    #[test]
+    fn jumps_between_unwatched_rows_in_the_visible_list() {
+        let episodes: Vec<_> = (1..=4)
+            .map(|i| crate::library::parse(PathBuf::from(format!("Show - {i:02}.mkv")), None))
+            .collect();
+        let extra = crate::library::parse(PathBuf::from("Show - 02.5.mkv"), None);
+        let mut items = episodes.clone();
+        items.insert(2, extra.clone());
+        let library = Library {
+            groups: [("Show".to_owned(), items)].into(),
+            warnings: vec![],
+        };
+        let watched = Progress {
+            watched: true,
+            ..Progress::default()
+        };
+        let history = HashMap::from([
+            (episodes[1].path.clone(), watched.clone()),
+            (
+                episodes[2].path.clone(),
+                Progress {
+                    position: 60.0,
+                    ..Progress::default()
+                },
+            ),
+            (episodes[3].path.clone(), watched),
+        ]);
+        let mut browser = Browser::new("Show".to_owned());
+        browser.refresh(&library, &history);
+        browser.episode_state.select(Some(3));
+
+        browser.jump_unwatched(&history, false);
+        assert!(browser.episodes_focus);
+        assert_eq!(browser.selected().unwrap().path, episodes[0].path);
+
+        browser.jump_unwatched(&history, true);
+        assert_eq!(browser.selected().unwrap().path, episodes[0].path);
+        assert_eq!(browser.jump_notice, Some("No unwatched videos above"));
+
+        browser.jump_unwatched(&history, false);
+        assert_eq!(browser.selected().unwrap().path, episodes[2].path);
+
+        browser.jump_unwatched(&history, false);
+        assert_eq!(browser.selected().unwrap().path, episodes[2].path);
+        assert_eq!(browser.jump_notice, Some("No unwatched videos below"));
+
+        browser.jump_unwatched(&history, true);
+        assert_eq!(browser.selected().unwrap().path, episodes[0].path);
+
+        browser.episodes_focus = false;
+        browser.extras = true;
+        browser.jump_unwatched(&history, false);
+        assert!(browser.episodes_focus);
+        assert_eq!(browser.selected().unwrap().path, extra.path);
+    }
+
+    #[test]
+    fn keeps_library_focus_when_every_video_is_watched() {
+        let episode = crate::library::parse(PathBuf::from("Show - 01.mkv"), None);
+        let history = HashMap::from([(
+            episode.path.clone(),
+            Progress {
+                watched: true,
+                ..Progress::default()
+            },
+        )]);
+        let library = Library {
+            groups: [("Show".to_owned(), vec![episode])].into(),
+            warnings: vec![],
+        };
+        let mut browser = Browser::new(String::new());
+        browser.refresh(&library, &history);
+
+        browser.jump_unwatched(&history, false);
+        assert!(!browser.episodes_focus);
+        assert_eq!(browser.episode_state.selected(), Some(0));
+        assert_eq!(
+            browser.jump_notice,
+            Some("No unwatched videos in this list")
+        );
     }
 }

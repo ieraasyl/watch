@@ -39,15 +39,21 @@ to the browser. mpv handles subtitles, audio tracks, seeking, and its usual keys
 | Enter | Select a title or play the selected video |
 | `/` | Edit fuzzy title search; Enter or Esc leaves search mode |
 | `e` | Switch between episodes and specials/extras |
+| `n` / `N` | Jump to the next or previous unwatched video in the episode pane |
 | `w` | Toggle the selected video as watched; clearing it resets progress |
 | `r` | Play the selected video from the start |
 | `c` | Clear search and select Continue watching, if available |
 | Home/End or `g`/`G` | Jump to the first or last item |
 | `q`, Esc, or Ctrl+C | Exit the browser |
 
-`w` and `r` act in the episodes pane. In search mode, letters including `q`
-are search text. Ctrl+C during playback saves the last reported position and
-exits both the player and CLI.
+From the library pane, `n` focuses the first unwatched video for the highlighted
+title in the current episodes or extras view. In the episode pane, jumps stay
+within the visible list and stop at its ends. Partially watched videos count as
+unwatched. Press Enter to play the highlighted video.
+
+`w` and `r` act in the episode pane. In search mode, letters including `q` are
+search text. Ctrl+C during playback saves the last reported position and exits
+both the player and CLI.
 
 Continue watching appears first when there are unfinished videos. Progress is
 saved every five seconds and when playback ends. A video becomes watched at
