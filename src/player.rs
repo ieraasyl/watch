@@ -21,7 +21,7 @@ pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) -> Result<bool> {
     INTERRUPTED.store(false, Ordering::Relaxed);
     let temporary = tempfile::Builder::new()
-        .prefix("watch-")
+        .prefix("wvd-")
         .permissions(Permissions::from_mode(0o700))
         .tempdir_in("/tmp")?;
     let socket_path = temporary.path().join("mpv.sock");

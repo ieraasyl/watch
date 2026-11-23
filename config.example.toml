@@ -1,11 +1,11 @@
-# Run `watch config` to find the config file location. No config is required.
+# Run `wvd config` to find the config file location. No config is required.
 media_dirs = ["~/Movies"]
 player = "mpv"
 
 # Mark watched on natural completion or after reaching this fraction.
 completion_threshold = 0.95
 
-# Optional display-title corrections, keyed by the title printed by `watch list`.
+# Optional display-title corrections, keyed by the title printed by `wvd list`.
 # Leave out the " · Season N" suffix in keys.
 [titles]
 # "Kuroko's Basketball" = "Kuroko no Basket"

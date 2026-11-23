@@ -1,4 +1,4 @@
-# watch
+# wvd
 
 A terminal browser for your local movies, anime, and TV shows. Search your
 library, play in mpv, and pick up where you left off.
@@ -17,46 +17,44 @@ run `uname -m` in Terminal. Linux usually reports `aarch64` for ARM64.
 
 | Computer | Download |
 | --- | --- |
-| macOS, Apple Silicon | [watch-macos-arm64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-macos-arm64.tar.gz) |
-| macOS, Intel | [watch-macos-x86_64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-macos-x86_64.tar.gz) |
-| Linux, ARM64 | [watch-linux-arm64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-linux-arm64.tar.gz) |
-| Linux, x86-64 | [watch-linux-x86_64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-linux-x86_64.tar.gz) |
+| macOS, Apple Silicon | [wvd-macos-arm64.tar.gz](https://github.com/ieraasyl/wvd/releases/latest/download/wvd-macos-arm64.tar.gz) |
+| macOS, Intel | [wvd-macos-x86_64.tar.gz](https://github.com/ieraasyl/wvd/releases/latest/download/wvd-macos-x86_64.tar.gz) |
+| Linux, ARM64 | [wvd-linux-arm64.tar.gz](https://github.com/ieraasyl/wvd/releases/latest/download/wvd-linux-arm64.tar.gz) |
+| Linux, x86-64 | [wvd-linux-x86_64.tar.gz](https://github.com/ieraasyl/wvd/releases/latest/download/wvd-linux-x86_64.tar.gz) |
 
 Extract the archive and open Terminal in the extracted folder. For example,
-on Apple Silicon the folder is `~/Downloads/watch-macos-arm64` if you
+on Apple Silicon the folder is `~/Downloads/wvd-macos-arm64` if you
 extracted it in Downloads. Run the following commands to install and start
 the browser.
 
 ```sh
 mkdir -p "$HOME/.local/bin"
-install -m 755 watch "$HOME/.local/bin/watch"
-"$HOME/.local/bin/watch"
+install -m 755 wvd "$HOME/.local/bin/wvd"
+"$HOME/.local/bin/wvd"
 ```
 
-To use the shorter `watch` command in the examples below, put
-`~/.local/bin` first on your `PATH`. The full path also works on systems
-that already have a Unix `watch` command.
+Add `~/.local/bin` to your `PATH` to run `wvd` from any directory.
 
 If macOS asks you to approve the downloaded binary, follow the steps for
 opening software from an unidentified developer. [Apple Support](https://support.apple.com/en-us/102445)
 
 ### Start watching
 
-Run `watch` to browse `~/Movies`. If your files live elsewhere, pass
+Run `wvd` to browse `~/Movies`. If your files live elsewhere, pass
 `--root` with your media folder. Press Enter on a title to move to its
 episodes or movies, then Enter again to play. Close the mpv window or press
 `q` in it to return to the browser. Use mpv's usual controls for seeking,
 subtitles, and audio tracks.
 
 ```sh
-watch --root /Volumes/Media    # Override library roots for this invocation
-watch "ao no hako"             # Open with a fuzzy title search
-watch resume                  # Pick up where you left off
-watch list                    # Print the library and watched status
-watch config                  # Show configuration and history file locations
+wvd --root /Volumes/Media    # Override library roots for this invocation
+wvd "ao no hako"             # Open with a fuzzy title search
+wvd resume                  # Pick up where you left off
+wvd list                    # Print the library and watched status
+wvd config                  # Show configuration and history file locations
 ```
 
-The browser needs an interactive terminal. Use `watch list` in scripts or pipes.
+The browser needs an interactive terminal. Use `wvd list` in scripts or pipes.
 
 ### Keyboard shortcuts
 
@@ -85,7 +83,7 @@ search text.
 ### Resume and watched status
 
 **Continue watching** appears at the top of the unfiltered library when you
-have unfinished videos with saved progress. `watch resume` plays the most
+have unfinished videos with saved progress. `wvd resume` plays the most
 recently updated unfinished video still in the library. If there are none,
 it checks your latest history entry still in the library and looks for a
 later unwatched regular episode in the same title and season.
@@ -101,7 +99,7 @@ for confirmation.
 ### Configuration
 
 Configuration is optional. To save your media folders or change other
-defaults, run `watch config` and create a file at the printed config path.
+defaults, run `wvd config` and create a file at the printed config path.
 Create the parent directory first if needed. You can start with the example
 below or copy [config.example.toml](config.example.toml).
 
@@ -124,12 +122,12 @@ Paths beginning with `~/` expand in the config; quote paths containing spaces
 when supplying command-line flags.
 
 On macOS the default configuration and SQLite history live under
-`~/Library/Application Support/watch-cli/`. On Linux they use the standard XDG
-configuration and data directories. `watch config` prints exact paths.
+`~/Library/Application Support/wvd/`. On Linux they use the standard XDG
+configuration and data directories. `wvd config` prints exact paths.
 
 ### How files are organized
 
-`watch` rescans your media folders each time it starts. It uses filenames
+`wvd` rescans your media folders each time it starts. It uses filenames
 and folders to infer titles, seasons, and episodes without looking up online
 metadata.
 
@@ -151,13 +149,13 @@ renaming a file gives it a fresh history entry.
 ### Install with Cargo
 
 With Rust 1.100.0 or later, you can build the published crate from source.
-[Rust and Cargo installation](https://rust-lang.org/tools/install/) · [watch-cli on crates.io](https://crates.io/crates/watch-cli)
+[Rust and Cargo installation](https://rust-lang.org/tools/install/) · [wvd on crates.io](https://crates.io/crates/wvd)
 
 ```sh
-cargo install watch-cli --locked
+cargo install wvd --locked
 ```
 
-Cargo installs `watch` in `~/.cargo/bin` by default.
+Cargo installs `wvd` in `~/.cargo/bin` by default.
 
 ### Run from source
 
@@ -194,7 +192,7 @@ request changes the manifest, lockfile, toolchain pin, or audit workflow.
 
 ### Build release downloads
 
-1. Push a tag such as `v0.1.0` that matches the version in `Cargo.toml`, and
+1. Push a tag such as `v0.2.0` that matches the version in `Cargo.toml`, and
    create a draft GitHub release for that tag.
 2. Run **Release binaries** from `main` in GitHub Actions and enter the tag.
    The workflow builds and tests each archive from that tagged source.

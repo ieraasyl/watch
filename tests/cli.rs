@@ -1,7 +1,7 @@
 use std::{fs, io, process::Command};
 
 fn command(root: &std::path::Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_watch"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_wvd"));
     command
         .arg("--config")
         .arg(root.join("config.toml"))
