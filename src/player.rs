@@ -6,10 +6,10 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::{
-    fs::File,
+    fs::{File, Permissions},
     io::{Read, Write},
     mem::DropGuard,
-    os::unix::net::UnixStream,
+    os::unix::{fs::PermissionsExt, net::UnixStream},
     process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -22,6 +22,7 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
     INTERRUPTED.store(false, Ordering::Relaxed);
     let temporary = tempfile::Builder::new()
         .prefix("watch-")
+        .permissions(Permissions::from_mode(0o700))
         .tempdir_in("/tmp")?;
     let socket_path = temporary.path().join("mpv.sock");
     let log_path = temporary.path().join("mpv.log");
@@ -233,7 +234,6 @@ mod tests {
     #[test]
     #[ignore = "requires mpv on PATH; plays a generated audio fixture with null outputs"]
     fn real_mpv_saves_on_quit_then_resumes_to_completion() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let audio = dir.path().join("episode.wav");
         let samples = 48_000_u32 * 3;
@@ -261,7 +261,7 @@ mod tests {
         .unwrap();
         let quit_early = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null --script=\"${0%/*}/quit.lua\" \"$@\"\n";
         std::fs::write(&wrapper, quit_early).unwrap();
-        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&wrapper, Permissions::from_mode(0o700)).unwrap();
         let media = crate::library::parse(audio, None);
         let config = Config {
             player: wrapper.clone(),
