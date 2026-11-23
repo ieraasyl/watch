@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs, io, process::Command};
 
 fn command(root: &std::path::Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_watch"));
@@ -40,6 +40,26 @@ fn lists_configured_library_with_title_overrides_and_natural_order() {
     assert!(!browser.status.success());
     assert!(String::from_utf8_lossy(&browser.stderr).contains("interactive terminal"));
     assert!(!browser.stdout.contains(&0x1b));
+}
+
+#[test]
+fn list_exits_cleanly_when_stdout_pipe_closes() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("config.toml"), "").unwrap();
+    fs::write(dir.path().join("Show - 01.mkv"), []).unwrap();
+    let (reader, writer) = io::pipe().unwrap();
+    drop(reader);
+
+    let result = command(dir.path())
+        .arg("--root")
+        .arg(dir.path())
+        .arg("list")
+        .stdout(writer)
+        .output()
+        .unwrap();
+
+    assert!(result.status.success(), "{result:?}");
+    assert!(result.stderr.is_empty(), "{result:?}");
 }
 
 #[test]

@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use config::{Config, Paths};
 use library::Library;
 use std::{
+    collections::HashMap,
     io::{self, IsTerminal},
     path::PathBuf,
     sync::atomic::Ordering,
@@ -75,23 +76,10 @@ fn run() -> Result<()> {
     let store = db::Store::open(&paths.database)?;
     let progress = store.all()?;
     if matches!(cli.command, Some(Command::List)) {
-        for (group, items) in &library.groups {
-            println!("{group}");
-            for item in items {
-                let status = progress
-                    .get(&item.path)
-                    .cloned()
-                    .unwrap_or_default()
-                    .status();
-                println!(
-                    "  {}{}  [{status}]",
-                    if item.extra { "Extra: " } else { "" },
-                    item.label
-                );
-            }
-        }
-        println!("{} media files", library.items().count());
-        return Ok(());
+        return match list(&library, &progress, io::stdout().lock()) {
+            Err(error) if error.kind() != io::ErrorKind::BrokenPipe => Err(error.into()),
+            _ => Ok(()),
+        };
     }
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         bail!("The browser needs an interactive terminal. Use `watch list` to print your library");
@@ -136,6 +124,31 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn list(
+    library: &Library,
+    progress: &HashMap<PathBuf, db::Progress>,
+    mut output: impl io::Write,
+) -> io::Result<()> {
+    for (group, items) in &library.groups {
+        writeln!(output, "{group}")?;
+        for item in items {
+            let status = progress
+                .get(&item.path)
+                .cloned()
+                .unwrap_or_default()
+                .status();
+            writeln!(
+                output,
+                "  {}{}  [{status}]",
+                if item.extra { "Extra: " } else { "" },
+                item.label
+            )?;
+        }
+    }
+    writeln!(output, "{} media files", library.items().count())?;
+    output.flush()
 }
 
 fn next_episode(
