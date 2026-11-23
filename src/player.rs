@@ -8,24 +8,15 @@ use serde_json::{Value, json};
 use std::{
     fs::File,
     io::{Read, Write},
+    mem::DropGuard,
     os::unix::net::UnixStream,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
 };
 
 pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
-
-// Always reap the player, including on IPC or database failures.
-struct Player(Child);
-
-impl Drop for Player {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) -> Result<bool> {
     INTERRUPTED.store(false, Ordering::Relaxed);
@@ -40,31 +31,34 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
     } else {
         previous.position
     };
-    let mut player = Player(
-        Command::new(&config.player)
-            .arg(format!("--input-ipc-server={}", socket_path.display()))
-            .arg(format!("--start={start}"))
-            .args(["--idle=no", "--keep-open=no", "--force-window=yes"])
-            .arg("--")
-            .arg(&media.path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(log.try_clone()?))
-            .stderr(Stdio::from(log))
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "Could not start {}. Install mpv or set player in your config",
-                    config.player.display()
-                )
-            })?,
-    );
+    let child = Command::new(&config.player)
+        .arg(format!("--input-ipc-server={}", socket_path.display()))
+        .arg(format!("--start={start}"))
+        .args(["--idle=no", "--keep-open=no", "--force-window=yes"])
+        .arg("--")
+        .arg(&media.path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log.try_clone()?))
+        .stderr(Stdio::from(log))
+        .spawn()
+        .with_context(|| {
+            format!(
+                "Could not start {}. Install mpv or set player in your config",
+                config.player.display()
+            )
+        })?;
+    // Always reap the player, including on IPC or database failures.
+    let mut player = DropGuard::new(child, |mut child| {
+        let _ = child.kill();
+        let _ = child.wait();
+    });
 
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut socket = loop {
         match UnixStream::connect(&socket_path) {
             Ok(socket) => break socket,
             Err(_) if Instant::now() < deadline => {
-                if let Some(status) = player.0.try_wait()? {
+                if let Some(status) = player.try_wait()? {
                     bail!(
                         "mpv exited before playback ({status}): {}",
                         read_log(&log_path)
@@ -166,7 +160,7 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
     }
     if !eof
         && !INTERRUPTED.load(Ordering::Relaxed)
-        && let Some(status) = player.0.try_wait()?
+        && let Some(status) = player.try_wait()?
         && !status.success()
     {
         bail!("mpv exited with {status}: {}", read_log(&log_path));

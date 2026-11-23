@@ -2,7 +2,7 @@
 name = "watch-cli"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.100.0"
 description = "Browse and resume your local media library from the terminal"
 license = "MIT"
 

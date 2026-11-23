@@ -257,7 +257,7 @@ impl Browser {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(Action::Quit),
                 KeyCode::Char('/') => self.searching = true,
-                KeyCode::Tab | KeyCode::BackTab => self.episodes_focus = !self.episodes_focus,
+                KeyCode::Tab | KeyCode::BackTab => self.episodes_focus.toggle(),
                 KeyCode::Left | KeyCode::Char('h') => self.episodes_focus = false,
                 KeyCode::Right | KeyCode::Char('l') => self.episodes_focus = true,
                 KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
@@ -267,7 +267,7 @@ impl Browser {
                 KeyCode::Char('n') => self.jump_unwatched(&history, false),
                 KeyCode::Char('N') if self.episodes_focus => self.jump_unwatched(&history, true),
                 KeyCode::Char('e') => {
-                    self.extras = !self.extras;
+                    self.extras.toggle();
                     self.episode_state.select(Some(0));
                     self.clamp_episode();
                 }

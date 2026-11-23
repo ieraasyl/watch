@@ -12,7 +12,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [stable, '1.89.0']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -20,16 +19,14 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
         with:
-          toolchain: ${{ matrix.toolchain }}
-          components: ${{ matrix.toolchain == 'stable' && 'rustfmt, clippy' || '' }}
-      - if: matrix.toolchain == 'stable'
-        run: cargo fmt --check
-      - if: matrix.toolchain == 'stable'
-        run: cargo clippy --locked --all-targets -- -D warnings
+          toolchain: '1.100.0'
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - name: Install mpv
-        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mpv
       - name: Verify real mpv playback
-        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        if: runner.os == 'Linux'
         run: cargo test --locked real_mpv -- --ignored
