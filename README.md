@@ -1,55 +1,74 @@
 # watch
 
-A Rust terminal browser for your local movies, anime, and TV shows. Search your
+A terminal browser for your local movies, anime, and TV shows. Search your
 library, play in mpv, and pick up where you left off.
 
-## Install
+[User guide](#user-guide) · [Development](#development)
 
-Requires macOS or Linux, Rust 1.100.0 or later, and
-[mpv](https://mpv.io/installation/). On macOS, install mpv with `brew install mpv`.
+## User guide
 
-Install from crates.io with Cargo.
+### Install
+
+Install mpv for playback. On macOS with Homebrew, run `brew install mpv`.
+On Linux, use your distribution's package manager. [mpv installation guide](https://mpv.io/installation/)
+
+Download the archive for your computer. If you're unsure which CPU you have,
+run `uname -m` in Terminal. Linux usually reports `aarch64` for ARM64.
+
+| Computer | Download |
+| --- | --- |
+| macOS, Apple Silicon | [watch-macos-arm64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-macos-arm64.tar.gz) |
+| macOS, Intel | [watch-macos-x86_64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-macos-x86_64.tar.gz) |
+| Linux, ARM64 | [watch-linux-arm64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-linux-arm64.tar.gz) |
+| Linux, x86-64 | [watch-linux-x86_64.tar.gz](https://github.com/ieraasyl/watch/releases/latest/download/watch-linux-x86_64.tar.gz) |
+
+Extract the archive and open Terminal in the extracted folder. For example,
+on Apple Silicon the folder is `~/Downloads/watch-macos-arm64` if you
+extracted it in Downloads. Run the following commands to install and start
+the browser.
 
 ```sh
-cargo install watch-cli --locked
+mkdir -p "$HOME/.local/bin"
+install -m 755 watch "$HOME/.local/bin/watch"
+"$HOME/.local/bin/watch"
 ```
 
-To build from a checkout, run the following command from the repository root.
-The repository pins Rust 1.100.0 for [rustup](https://rust-lang.org/tools/install/) users.
+To use the shorter `watch` command in the examples below, put
+`~/.local/bin` first on your `PATH`. The full path also works on systems
+that already have a Unix `watch` command.
+
+If macOS asks you to approve the downloaded binary, follow the steps for
+opening software from an unidentified developer. [Apple Support](https://support.apple.com/en-us/102445)
+
+### Start watching
+
+Run `watch` to browse `~/Movies`. If your files live elsewhere, pass
+`--root` with your media folder. Press Enter on a title to move to its
+episodes or movies, then Enter again to play. Close the mpv window or press
+`q` in it to return to the browser. Use mpv's usual controls for seeking,
+subtitles, and audio tracks.
 
 ```sh
-cargo install --path . --locked --root "$HOME/.local"
-```
-
-Make sure the install directory is on your `PATH` (`~/.cargo/bin` by default,
-or `~/.local/bin` for the checkout command above). If you already use the Unix
-`watch` utility, invoke this binary by its full path or give it a different local name.
-
-## Use
-
-```sh
-watch                         # Browse ~/Movies
-watch kuroko                  # Open with a fuzzy title search
-watch "ao no hako"             # Quote searches containing spaces
-watch resume                  # Resume the latest unfinished video
-watch list                    # Print titles, episodes, extras, and watched status
-watch config                  # Show configuration and history file locations
 watch --root /Volumes/Media    # Override library roots for this invocation
+watch "ao no hako"             # Open with a fuzzy title search
+watch resume                  # Pick up where you left off
+watch list                    # Print the library and watched status
+watch config                  # Show configuration and history file locations
 ```
 
-Press Enter on a title to move to its episodes, then Enter again to play.
-Playback opens in an mpv window. Close that window or press `q` there to return
-to the browser. mpv handles subtitles, audio tracks, seeking, and its usual keys.
+The browser needs an interactive terminal. Use `watch list` in scripts or pipes.
+
+### Keyboard shortcuts
 
 | Key | Action |
 | --- | --- |
 | Arrow keys or `h`/`j`/`k`/`l` | Move or change pane |
 | Tab | Switch pane |
 | Enter | Select a title or play the selected video |
-| `/` | Edit fuzzy title search; Enter or Esc leaves search mode |
+| `/` | Edit fuzzy title search. Press Enter or Esc to leave search mode |
 | `e` | Switch between episodes and specials/extras |
 | `n` / `N` | Jump to the next or previous unwatched video in the episode pane |
-| `w` | Toggle the selected video as watched; clearing it resets progress |
+| `w` | Toggle watched status and reset saved progress |
 | `r` | Play the selected video from the start |
 | `c` | Clear search and select Continue watching, if available |
 | Home/End or `g`/`G` | Jump to the first or last item |
@@ -61,26 +80,30 @@ within the visible list and stop at its ends. Partially watched videos count as
 unwatched. Press Enter to play the highlighted video.
 
 `w` and `r` act in the episode pane. In search mode, letters including `q` are
-search text. Ctrl+C during playback saves the last reported position and exits
-both the player and CLI.
+search text.
 
-Continue watching appears first when there are unfinished videos. Progress is
-saved every five seconds and when playback ends. A video becomes watched at
-natural completion or at 95% of its duration, whichever comes first. Replaying
-a watched video starts from the beginning and preserves its watched status.
-After natural completion, the browser offers the next unwatched regular episode
-in the same season and waits for confirmation before playing it. Specials are
-excluded from that sequence.
+### Resume and watched status
 
-`watch resume` picks the most recently updated unfinished video still present
-in the library. If none exists, it plays the next unwatched episode
-after the most recently updated entry. The library is rescanned on each launch.
+**Continue watching** appears at the top of the unfiltered library when you
+have unfinished videos with saved progress. `watch resume` plays the most
+recently updated unfinished video still in the library. If there are none,
+it checks your latest history entry still in the library and looks for a
+later unwatched regular episode in the same title and season.
 
-## Configuration
+Progress is saved every five seconds and when playback ends. Ctrl+C during
+playback saves the last reported position and exits both the player and CLI.
+A video becomes watched when it finishes naturally or reaches the completion
+threshold, 95% by default. Replaying a watched video starts from the beginning
+and preserves its watched status. After an episode finishes naturally, the
+browser offers the next unwatched regular episode in the same season and waits
+for confirmation.
 
-Defaults work without creating a configuration file. To customize them, run
-`watch config` and copy `config.example.toml` to the printed config path.
-Create its parent directory first if necessary.
+### Configuration
+
+Configuration is optional. To save your media folders or change other
+defaults, run `watch config` and create a file at the printed config path.
+Create the parent directory first if needed. You can start with the example
+below or copy [config.example.toml](config.example.toml).
 
 ```toml
 media_dirs = ["~/Movies", "/Volumes/Media"]
@@ -104,7 +127,11 @@ On macOS the default configuration and SQLite history live under
 `~/Library/Application Support/watch-cli/`. On Linux they use the standard XDG
 configuration and data directories. `watch config` prints exact paths.
 
-## Library behavior
+### How files are organized
+
+`watch` rescans your media folders each time it starts. It uses filenames
+and folders to infer titles, seasons, and episodes without looking up online
+metadata.
 
 - Recognizes common video extensions, including MKV, MP4, MOV, AVI, and WebM.
 - Handles release names such as `Show.S02E10`, `Show 2x10`, and anime
@@ -115,28 +142,64 @@ configuration and data directories. `watch config` prints exact paths.
   are not followed; overlapping library roots are deduplicated.
 - Reports unreadable or missing roots while keeping readable media available.
 
-Filename interpretation is heuristic. Ambiguous names can remain separate
-titles; use title overrides to correct grouping. There are no network metadata
-lookups. History is keyed by the canonical file path, so moving or renaming a
-file gives it a fresh history entry. The application does not rename media.
-
-The interactive browser needs a terminal; use `watch list` in scripts or pipes.
+Ambiguous names can remain separate titles. Use `[titles]` in the config to
+correct grouping. History follows each file's canonical path, so moving or
+renaming a file gives it a fresh history entry.
 
 ## Development
 
+### Install with Cargo
+
+With Rust 1.100.0 or later, you can build the published crate from source.
+[Rust and Cargo installation](https://rust-lang.org/tools/install/) · [watch-cli on crates.io](https://crates.io/crates/watch-cli)
+
 ```sh
-cargo run -- kuroko
+cargo install watch-cli --locked
+```
+
+Cargo installs `watch` in `~/.cargo/bin` by default.
+
+### Run from source
+
+Clone the repository and run these commands from its root. The
+[toolchain file](rust-toolchain.toml) pins Rust 1.100.0 for rustup users.
+
+```sh
+cargo run --locked -- list
+cargo run --locked -- "ao no hako"
+```
+
+To install your checkout locally, run the following command and make sure
+`~/.local/bin` is on your `PATH`.
+
+```sh
+cargo install --path . --locked --root "$HOME/.local"
+```
+
+### Checks
+
+```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo test real_mpv -- --ignored  # Optional real playback test; requires mpv
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo test --locked real_mpv -- --ignored  # Optional playback test, requires mpv
 ```
 
 The mpv test generates a silent audio fixture and uses null audio/video outputs
 to check quitting, saved progress, resuming, completion, rewatches, and playback
-errors without opening a window or touching your library. CI checks formatting,
-linting, and tests on macOS and Linux with Rust 1.100.0, and runs the mpv test
-on Linux. The dependency audit runs weekly and when a pull request changes the
-manifest, lockfile, toolchain pin, or audit workflow.
+errors without opening a window or touching your library. [CI](.github/workflows/ci.yml)
+runs the checks on macOS and Linux, with the mpv test on Linux.
+The [dependency audit](.github/workflows/audit.yml) runs weekly and when a pull
+request changes the manifest, lockfile, toolchain pin, or audit workflow.
 
-MIT licensed.
+### Build release downloads
+
+1. Push a tag such as `v0.1.0` that matches the version in `Cargo.toml`, and
+   create a draft GitHub release for that tag.
+2. Run **Release binaries** from `main` in GitHub Actions and enter the tag.
+   The workflow builds and tests each archive from that tagged source.
+3. Publish the draft after it contains the four archives and `SHA256SUMS`.
+
+## License
+
+[MIT](LICENSE)
