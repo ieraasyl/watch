@@ -1,13 +1,13 @@
 use crate::config::Config;
-use regex::Regex;
+use regex::{Captures, Regex};
 use std::{collections::BTreeMap, path::PathBuf, sync::LazyLock};
 use walkdir::WalkDir;
 
 static BRACKETS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[^\]]*\]").unwrap());
 static STANDARD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(.*?)\bS(\d{1,2})\s*E(\d+(?:\.\d+)?)(?:\b|\s)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^(.*?)\bS(\d{1,2})[.\s]*E(\d+(?:\.\d+)?)(?:\b|\s)").unwrap());
 static CROSS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(.*?)\b(\d{1,2})x(\d{1,3})(?:\b|\s)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^(.*?)\b(\d{1,2})x(\d{1,3}(?:\.\d+)?)(?:\b|\s)").unwrap());
 static ANIME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^(.*?)\s+-\s+(\d+(?:\.\d+)?)(?:v\d+)?(?:\s|$)").unwrap());
 static SEASON: LazyLock<Regex> =
@@ -139,12 +139,20 @@ fn title_season(text: &str) -> (String, Option<u32>) {
     (clean(&text), season)
 }
 
+fn scene_episode(name: &str) -> Option<Captures<'_>> {
+    STANDARD.captures(name).or_else(|| CROSS.captures(name))
+}
+
 pub fn parse(path: PathBuf, folder: Option<&std::path::Path>) -> Media {
     let raw = path.file_stem().unwrap_or_default().to_string_lossy();
     // Preserve decimal episode numbers; dots in conventional scene names are separators.
     let mut normalized = BRACKETS.replace_all(&raw, " ").replace('_', " ");
-    if !ANIME.is_match(&normalized) {
-        normalized = normalized.replace('.', " ");
+    if normalized.contains('.') && !ANIME.is_match(&normalized) {
+        let mut spaced = normalized.replace('.', " ");
+        if let Some(episode) = scene_episode(&normalized).and_then(|captures| captures.get(3)) {
+            spaced.replace_range(episode.range(), episode.as_str());
+        }
+        normalized = spaced;
     }
     let folder_name = folder.and_then(|p| p.file_name()).map(|s| {
         let text = s.to_string_lossy();
@@ -156,10 +164,7 @@ pub fn parse(path: PathBuf, folder: Option<&std::path::Path>) -> Media {
         clean(&text.replace(['[', ']'], " "))
     });
     let folder_parts = folder_name.as_deref().map(title_season);
-    let standard = STANDARD
-        .captures(&normalized)
-        .or_else(|| CROSS.captures(&normalized));
-    let (mut title, mut season, episode) = if let Some(c) = standard {
+    let (mut title, mut season, episode) = if let Some(c) = scene_episode(&normalized) {
         (clean(&c[1]), c[2].parse().ok(), c[3].parse().ok())
     } else if let Some(c) = ANIME.captures(&normalized) {
         let (title, season) = title_season(&c[1]);
@@ -234,6 +239,17 @@ mod tests {
             (tv.title.as_str(), tv.season, tv.episode),
             ("Some Show", Some(2), Some(10.0))
         );
+        for (file, label) in [
+            ("Some.Show.S02E10.5.1080p.mkv", "Some Show S02E10.5"),
+            ("Some.Show.S02.E10.5.1080p.mkv", "Some Show S02 E10.5"),
+            ("Some.Show.2x10.5.1080p.mkv", "Some Show 2x10.5"),
+        ] {
+            let special = parse(PathBuf::from(file), None);
+            assert_eq!(special.group(), tv.group());
+            assert_eq!(special.episode, Some(10.5));
+            assert!(special.extra);
+            assert_eq!(special.label, label);
+        }
         let anime = parse(
             PathBuf::from(
                 "[Erai-raws] Ao no Hako Season 2 - 06 [1080p NF WEBRip HEVC EAC3][MultiSub].mkv",
