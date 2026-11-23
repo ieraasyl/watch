@@ -6,17 +6,24 @@ library, play in mpv, and pick up where you left off.
 ## Install
 
 Requires macOS or Linux, Rust 1.100.0 or later, and
-[mpv](https://mpv.io/installation/). The repository pins Rust 1.100.0 for
-[rustup](https://rust-lang.org/tools/install/) users. On macOS, install mpv
-with Homebrew and build from the repository.
+[mpv](https://mpv.io/installation/). On macOS, install mpv with `brew install mpv`.
+
+Install from crates.io with Cargo.
 
 ```sh
-brew install mpv
+cargo install watch-cli --locked
+```
+
+To build from a checkout, run the following command from the repository root.
+The repository pins Rust 1.100.0 for [rustup](https://rust-lang.org/tools/install/) users.
+
+```sh
 cargo install --path . --locked --root "$HOME/.local"
 ```
 
-Make sure `~/.local/bin` is on your `PATH`. If you already use the Unix `watch`
-utility, invoke this binary by its full path or give it a different local name.
+Make sure the install directory is on your `PATH` (`~/.cargo/bin` by default,
+or `~/.local/bin` for the checkout command above). If you already use the Unix
+`watch` utility, invoke this binary by its full path or give it a different local name.
 
 ## Use
 
