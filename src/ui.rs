@@ -1,7 +1,8 @@
 use crate::{
+    config::Config,
     db::{self, Progress, Store},
     library::{Library, Media},
-    player,
+    player, resume,
 };
 use anyhow::Result;
 use crossterm::{
@@ -43,7 +44,7 @@ pub struct Browser {
     groups: Vec<Group>,
     group_state: ListState,
     episode_state: ListState,
-    jump_notice: Option<&'static str>,
+    feedback: Option<String>,
     pub notice: String,
     pub next: Option<Media>,
 }
@@ -96,18 +97,19 @@ impl Browser {
             groups: Vec::new(),
             group_state: ListState::default(),
             episode_state: ListState::default(),
-            jump_notice: None,
+            feedback: None,
             notice: String::new(),
             next: None,
         }
     }
 
     fn refresh(&mut self, library: &Library, history: &HashMap<PathBuf, Progress>) {
+        let previous_media = self.selected().map(|media| media.path);
         let previous = self
             .group_state
             .selected()
             .and_then(|i| self.groups.get(i))
-            .map(|g| g.name.clone());
+            .map(|g| (g.name.clone(), g.continuing));
         let pattern = Pattern::parse(&self.query, CaseMatching::Ignore, Normalization::Smart);
         // The matcher's stable sort keeps titles with equal scores in library order.
         self.groups = pattern
@@ -120,21 +122,10 @@ impl Browser {
             })
             .collect();
         if self.query.is_empty() {
-            let mut continuing: Vec<_> = library
-                .items()
-                .filter(|item| {
-                    history
-                        .get(&item.path)
-                        .is_some_and(|p| p.position > 0.0 && !p.watched)
-                })
+            let continuing: Vec<_> = resume::candidates(library, history)
+                .into_iter()
                 .cloned()
                 .collect();
-            continuing.sort_by(|a, b| {
-                history[&b.path]
-                    .updated
-                    .cmp(&history[&a.path].updated)
-                    .then(a.path.cmp(&b.path))
-            });
             if !continuing.is_empty() {
                 self.groups.insert(
                     0,
@@ -147,10 +138,19 @@ impl Browser {
             }
         }
         let selected = previous
-            .and_then(|name| self.groups.iter().position(|g| g.name == name))
+            .and_then(|(name, continuing)| {
+                self.groups
+                    .iter()
+                    .position(|g| g.name == name && g.continuing == continuing)
+            })
             .unwrap_or(0);
         self.group_state
             .select((!self.groups.is_empty()).then_some(selected));
+        if let Some(path) = previous_media
+            && let Some(index) = self.items().iter().position(|item| item.path == path)
+        {
+            self.episode_state.select(Some(index));
+        }
         self.clamp_episode();
     }
 
@@ -184,7 +184,12 @@ impl Browser {
         });
     }
 
-    pub fn run(&mut self, library: &Library, store: &Store) -> Result<Action> {
+    pub fn run(
+        &mut self,
+        library: &mut Library,
+        config: &Config,
+        store: &mut Store,
+    ) -> Result<Action> {
         let mut history = store.all()?;
         self.refresh(library, &history);
         let mut session = Session::new()?;
@@ -204,7 +209,7 @@ impl Browser {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
-            self.jump_notice = None;
+            self.feedback = None;
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 return Ok(Action::Quit);
             }
@@ -283,6 +288,23 @@ impl Browser {
                         self.refresh(library, &history);
                     }
                 }
+                KeyCode::Char('W') if self.episodes_focus => {
+                    self.mark_watched_through(library, store, &mut history)?;
+                }
+                KeyCode::Char('R') => {
+                    self.notice.clear();
+                    self.feedback = Some("Refreshing library...".to_owned());
+                    session
+                        .terminal
+                        .draw(|frame| self.draw(frame, library, &history))?;
+                    *library = Library::scan(config);
+                    history = store.all()?;
+                    self.refresh(library, &history);
+                    self.feedback = library
+                        .warnings
+                        .is_empty()
+                        .then(|| format!("Library refreshed ({} videos)", library.items().count()));
+                }
                 KeyCode::Enter if !self.episodes_focus => self.episodes_focus = true,
                 KeyCode::Enter | KeyCode::Char('r') if self.episodes_focus => {
                     if let Some(media) = self.selected() {
@@ -295,6 +317,38 @@ impl Browser {
                 _ => {}
             }
         }
+    }
+
+    fn mark_watched_through(
+        &mut self,
+        library: &Library,
+        store: &mut Store,
+        history: &mut HashMap<PathBuf, Progress>,
+    ) -> Result<()> {
+        let Some((media, episode)) = self
+            .selected()
+            .and_then(|media| media.regular_episode().map(|episode| (media, episode)))
+        else {
+            self.feedback =
+                Some("Select a regular episode to mark earlier episodes as watched".to_owned());
+            return Ok(());
+        };
+        let paths = library.groups[&media.group()]
+            .iter()
+            .filter(|item| {
+                item.regular_episode()
+                    .is_some_and(|number| number <= episode)
+            })
+            .map(|item| item.path.as_path());
+        let changed = store.mark_watched_through(paths, &media.path)?;
+        *history = store.all()?;
+        self.refresh(library, history);
+        self.feedback = Some(match changed {
+            0 => "Episodes through this one are already watched".to_owned(),
+            1 => "Marked 1 episode as watched".to_owned(),
+            count => format!("Marked {count} episodes as watched"),
+        });
+        Ok(())
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -346,11 +400,14 @@ impl Browser {
             self.episode_state.select(Some(index));
             self.episodes_focus = true;
         } else {
-            self.jump_notice = Some(match (self.episodes_focus, backward) {
-                (false, _) => "No unwatched videos in this list",
-                (true, true) => "No unwatched videos above",
-                (true, false) => "No unwatched videos below",
-            });
+            self.feedback = Some(
+                match (self.episodes_focus, backward) {
+                    (false, _) => "No unwatched videos in this list",
+                    (true, true) => "No unwatched videos above",
+                    (true, false) => "No unwatched videos below",
+                }
+                .to_owned(),
+            );
         }
     }
 
@@ -386,18 +443,22 @@ impl Browser {
                     .iter()
                     .filter(|item| history.get(&item.path).is_some_and(|p| p.watched))
                     .count();
-                let (title, detail) =
-                    if let Some((title, season)) = group.name.split_once(" · Season ") {
-                        (
-                            title.to_owned(),
-                            format!("Season {season} · {watched}/{} watched", group.items.len()),
-                        )
-                    } else {
-                        (
-                            group.name.clone(),
-                            format!("{watched}/{} watched", group.items.len()),
-                        )
-                    };
+                let (title, detail) = if group.continuing {
+                    (
+                        group.name.clone(),
+                        format!("{} ready to play", group.items.len()),
+                    )
+                } else if let Some((title, season)) = group.name.split_once(" · Season ") {
+                    (
+                        title.to_owned(),
+                        format!("Season {season} · {watched}/{} watched", group.items.len()),
+                    )
+                } else {
+                    (
+                        group.name.clone(),
+                        format!("{watched}/{} watched", group.items.len()),
+                    )
+                };
                 ListItem::new(vec![
                     Line::from(title),
                     Line::from(Span::styled(
@@ -427,10 +488,15 @@ impl Browser {
                 } else {
                     item.label.clone()
                 };
+                let status = if continuing && progress.position == 0.0 {
+                    "Up next".to_owned()
+                } else {
+                    progress.status()
+                };
                 ListItem::new(vec![
                     Line::from(label),
                     Line::from(Span::styled(
-                        format!("  {}", progress.status()),
+                        format!("  {status}"),
                         Style::default().fg(if progress.watched {
                             Color::Green
                         } else {
@@ -475,7 +541,7 @@ impl Browser {
             Paragraph::new(vec![
                 Line::from(detail),
                 Line::from(Span::styled(
-                    self.jump_notice.unwrap_or(warning),
+                    self.feedback.as_deref().unwrap_or(warning),
                     Style::default().fg(Color::Yellow),
                 )),
             ])
@@ -484,8 +550,8 @@ impl Browser {
         );
         frame.render_widget(
             Paragraph::new(concat!(
-                "↑↓/jk move · Tab switch · Enter select/play · / search · e extras\n",
-                "n/N unwatched · w watched · r restart · c continue · q quit"
+                "↑↓/jk move   Tab switch   Enter select/play   / search   e extras   R refresh\n",
+                "n/N unwatched   w watched   W mark through   r restart   c continue   q quit"
             ))
             .style(Style::default().fg(Color::DarkGray)),
             rows[3],
@@ -597,6 +663,76 @@ mod tests {
     }
 
     #[test]
+    fn marks_only_regular_episodes_through_the_selection_and_updates_continue_watching() {
+        let [first, second, extra, third, next_season] = [
+            "Show.S01E01.mkv",
+            "Show.S01E02.mkv",
+            "Show.S01E01.5.mkv",
+            "Show.S01E03.mkv",
+            "Show.S02E01.mkv",
+        ]
+        .map(|name| crate::library::parse(PathBuf::from(name), None));
+        let library = Library {
+            groups: [
+                (
+                    first.group(),
+                    vec![first.clone(), second.clone(), third.clone(), extra.clone()],
+                ),
+                (next_season.group(), vec![next_season.clone()]),
+            ]
+            .into(),
+            warnings: vec![],
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("history.sqlite3")).unwrap();
+        store
+            .save(
+                &first.path,
+                &Progress {
+                    position: 12.0,
+                    updated: 1,
+                    ..Progress::default()
+                },
+            )
+            .unwrap();
+        store
+            .save(
+                &second.path,
+                &Progress {
+                    watched: true,
+                    updated: 2,
+                    ..Progress::default()
+                },
+            )
+            .unwrap();
+        let mut history = store.all().unwrap();
+        let mut browser = Browser::new("Show".to_owned());
+        browser.refresh(&library, &history);
+        browser.episode_state.select(Some(1));
+        assert_eq!(browser.selected().unwrap().path, second.path);
+
+        browser
+            .mark_watched_through(&library, &mut store, &mut history)
+            .unwrap();
+        assert!(history[&first.path].watched);
+        assert_eq!(history[&first.path].position, 12.0);
+        assert!(history[&second.path].watched);
+        for media in [&extra, &third, &next_season] {
+            assert!(!history.contains_key(&media.path));
+        }
+        assert_eq!(resume::candidates(&library, &history)[0].path, third.path);
+        assert_eq!(browser.selected().unwrap().path, second.path);
+
+        browser
+            .mark_watched_through(&library, &mut store, &mut history)
+            .unwrap();
+        assert_eq!(
+            browser.feedback.as_deref(),
+            Some("Episodes through this one are already watched")
+        );
+    }
+
+    #[test]
     fn jumps_between_unwatched_rows_in_the_visible_list() {
         let episodes: Vec<_> = (1..=4)
             .map(|i| crate::library::parse(PathBuf::from(format!("Show - {i:02}.mkv")), None))
@@ -633,14 +769,20 @@ mod tests {
 
         browser.jump_unwatched(&history, true);
         assert_eq!(browser.selected().unwrap().path, episodes[0].path);
-        assert_eq!(browser.jump_notice, Some("No unwatched videos above"));
+        assert_eq!(
+            browser.feedback.as_deref(),
+            Some("No unwatched videos above")
+        );
 
         browser.jump_unwatched(&history, false);
         assert_eq!(browser.selected().unwrap().path, episodes[2].path);
 
         browser.jump_unwatched(&history, false);
         assert_eq!(browser.selected().unwrap().path, episodes[2].path);
-        assert_eq!(browser.jump_notice, Some("No unwatched videos below"));
+        assert_eq!(
+            browser.feedback.as_deref(),
+            Some("No unwatched videos below")
+        );
 
         browser.jump_unwatched(&history, true);
         assert_eq!(browser.selected().unwrap().path, episodes[0].path);
@@ -673,7 +815,7 @@ mod tests {
         assert!(!browser.episodes_focus);
         assert_eq!(browser.episode_state.selected(), Some(0));
         assert_eq!(
-            browser.jump_notice,
+            browser.feedback.as_deref(),
             Some("No unwatched videos in this list")
         );
     }

@@ -30,6 +30,10 @@ pub struct Media {
 }
 
 impl Media {
+    pub fn regular_episode(&self) -> Option<f64> {
+        self.episode.filter(|_| !self.extra)
+    }
+
     pub fn group(&self) -> String {
         match self.season {
             Some(season) => format!("{} · Season {season}", self.title),

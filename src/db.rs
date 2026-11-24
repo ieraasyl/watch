@@ -90,6 +90,37 @@ impl Store {
         self.write_progress(path, progress, true)
     }
 
+    pub fn mark_watched_through<'a>(
+        &mut self,
+        paths: impl Iterator<Item = &'a Path>,
+        through: &Path,
+    ) -> Result<usize> {
+        let updated = now();
+        let transaction = self.0.transaction()?;
+        let changed = {
+            let mut statement = transaction.prepare(
+                "INSERT INTO progress (path, position, duration, watched, updated)
+                 VALUES (?1, 0, 0, 1, ?2)
+                 ON CONFLICT(path) DO UPDATE SET watched=1, updated=excluded.updated
+                 WHERE NOT progress.watched",
+            )?;
+            let mut changed = 0;
+            for path in paths {
+                changed += statement.execute(params![path.as_os_str().as_bytes(), updated])?;
+            }
+            changed
+        };
+        if changed > 0 {
+            // Continue from the selected episode even if it was already watched.
+            transaction.execute(
+                "UPDATE progress SET updated=?2 WHERE path=?1",
+                params![through.as_os_str().as_bytes(), updated],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(changed)
+    }
+
     fn write_progress(
         &self,
         path: &Path,
