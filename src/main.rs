@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod library;
 mod player;
+mod resume;
 mod ui;
 
 use anyhow::{Context, Result, bail};
@@ -69,11 +70,11 @@ fn run() -> Result<()> {
     if !cli.roots.is_empty() {
         config.media_dirs = cli.roots;
     }
-    let library = Library::scan(&config);
+    let mut library = Library::scan(&config);
     for warning in &library.warnings {
         eprintln!("wvd: {warning}");
     }
-    let store = db::Store::open(&paths.database)?;
+    let mut store = db::Store::open(&paths.database)?;
     let progress = store.all()?;
     if matches!(cli.command, Some(Command::List)) {
         return match list(&library, &progress, io::stdout().lock()) {
@@ -87,14 +88,16 @@ fn run() -> Result<()> {
     ctrlc::set_handler(|| player::INTERRUPTED.store(true, Ordering::Relaxed))?;
     let mut browser = ui::Browser::new(cli.query.unwrap_or_default());
     let mut action = if matches!(cli.command, Some(Command::Resume)) {
-        let candidate = resume_candidate(&library, &progress)
-            .context("Nothing to resume yet. Run `wvd` and play something first")?;
+        let candidate = resume::candidates(&library, &progress)
+            .into_iter()
+            .next()
+            .context("Nothing to resume in this library. Open `wvd` to choose a video")?;
         ui::Action::Play {
-            media: candidate,
+            media: candidate.clone(),
             restart: false,
         }
     } else {
-        browser.run(&library, &store)?
+        browser.run(&mut library, &config, &mut store)?
     };
     loop {
         match action {
@@ -111,7 +114,8 @@ fn run() -> Result<()> {
                     Ok(finished) => {
                         browser.notice.clear();
                         if finished {
-                            browser.next = next_episode(&library, &media, &store.all()?);
+                            browser.next =
+                                resume::next_episode(&library, &media, &store.all()?).cloned();
                         }
                     }
                     Err(error) => browser.notice = format!("{error:#}"),
@@ -119,7 +123,7 @@ fn run() -> Result<()> {
                 if player::INTERRUPTED.load(Ordering::Relaxed) {
                     break;
                 }
-                action = browser.run(&library, &store)?;
+                action = browser.run(&mut library, &config, &mut store)?;
             }
         }
     }
@@ -149,97 +153,4 @@ fn list(
     }
     writeln!(output, "{} media files", library.items().count())?;
     output.flush()
-}
-
-fn next_episode(
-    library: &Library,
-    media: &library::Media,
-    history: &std::collections::HashMap<PathBuf, db::Progress>,
-) -> Option<library::Media> {
-    if media.extra || media.episode.is_none() {
-        return None;
-    }
-    let items = library.groups.get(&media.group())?;
-    let current = items.iter().position(|item| item.path == media.path)?;
-    items
-        .iter()
-        .skip(current + 1)
-        .find(|item| {
-            !item.extra
-                && item.episode.is_some()
-                && !history.get(&item.path).is_some_and(|p| p.watched)
-        })
-        .cloned()
-}
-
-fn resume_candidate(
-    library: &Library,
-    history: &std::collections::HashMap<PathBuf, db::Progress>,
-) -> Option<library::Media> {
-    let latest = library
-        .items()
-        .filter(|item| {
-            history
-                .get(&item.path)
-                .is_some_and(|p| p.position > 0.0 && !p.watched)
-        })
-        .max_by_key(|item| history[&item.path].updated);
-    if let Some(media) = latest {
-        return Some(media.clone());
-    }
-    let latest = library
-        .items()
-        .filter(|item| history.contains_key(&item.path))
-        .max_by_key(|item| history[&item.path].updated)?;
-    next_episode(library, latest, history)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn resume_prefers_partial_playback_then_next_unwatched_episode() {
-        let first = library::parse(PathBuf::from("Show - 01.mkv"), None);
-        let second = library::parse(PathBuf::from("Show - 02.mkv"), None);
-        let third = library::parse(PathBuf::from("Show - 03.mkv"), None);
-        let library = Library {
-            groups: [(
-                "Show".to_owned(),
-                vec![first.clone(), second.clone(), third.clone()],
-            )]
-            .into(),
-            warnings: vec![],
-        };
-        let mut history = std::collections::HashMap::new();
-        history.insert(
-            first.path.clone(),
-            db::Progress {
-                position: 60.0,
-                updated: 1,
-                ..Default::default()
-            },
-        );
-        history.insert(
-            second.path.clone(),
-            db::Progress {
-                watched: true,
-                updated: 2,
-                ..Default::default()
-            },
-        );
-        assert_eq!(
-            resume_candidate(&library, &history).unwrap().path,
-            first.path
-        );
-        history.get_mut(&first.path).unwrap().watched = true;
-        assert_eq!(
-            resume_candidate(&library, &history).unwrap().path,
-            third.path
-        );
-        assert_eq!(
-            next_episode(&library, &first, &history).unwrap().path,
-            third.path
-        );
-    }
 }

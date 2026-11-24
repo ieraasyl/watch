@@ -67,7 +67,9 @@ The browser needs an interactive terminal. Use `wvd list` in scripts or pipes.
 | `e` | Switch between episodes and specials/extras |
 | `n` / `N` | Jump to the next or previous unwatched video in the episode pane |
 | `w` | Toggle watched status and reset saved progress |
+| `W` | Mark regular episodes in the selected season through this episode as watched |
 | `r` | Play the selected video from the start |
+| `R` | Rescan the media folders and keep the current search and selection if still visible |
 | `c` | Clear search and select Continue watching, if available |
 | Home/End or `g`/`G` | Jump to the first or last item |
 | `q`, Esc, or Ctrl+C | Exit the browser |
@@ -77,24 +79,26 @@ title in the current episodes or extras view. In the episode pane, jumps stay
 within the visible list and stop at its ends. Partially watched videos count as
 unwatched. Press Enter to play the highlighted video.
 
-`w` and `r` act in the episode pane. In search mode, letters including `q` are
-search text.
+`w`, `W`, and `r` act in the episode pane. `W` skips extras and works within the
+selected season, or the unnumbered episode list for a series. In search mode,
+letters including `q` are search text.
 
 ### Resume and watched status
 
-**Continue watching** appears at the top of the unfiltered library when you
-have unfinished videos with saved progress. `wvd resume` plays the most
-recently updated unfinished video still in the library. If there are none,
-it checks your latest history entry still in the library and looks for a
-later unwatched regular episode in the same title and season.
+**Continue watching** appears at the top of the unfiltered library when there
+is something to resume or play next. For each series you started, it shows a
+partly watched regular episode or the next unwatched one after the episode you
+watched most recently. Unfinished movies and extras are also listed. Partly
+watched videos appear first, and `wvd resume` plays the first item in this list.
 
 Progress is saved every five seconds and when playback ends. Ctrl+C during
 playback saves the last reported position and exits both the player and CLI.
 A video becomes watched when it finishes naturally or reaches the completion
 threshold, 95% by default. Replaying a watched video starts from the beginning
 and preserves its watched status. After an episode finishes naturally, the
-browser offers the next unwatched regular episode in the same season and waits
-for confirmation.
+browser offers the next unwatched regular episode and waits for confirmation.
+The prompt and Continue watching can advance to a later numbered season of
+the same series. Unnumbered episodes continue within their own list.
 
 ### Configuration
 
@@ -127,9 +131,9 @@ configuration and data directories. `wvd config` prints exact paths.
 
 ### How files are organized
 
-`wvd` rescans your media folders each time it starts. It uses filenames
-and folders to infer titles, seasons, and episodes without looking up online
-metadata.
+`wvd` rescans your media folders each time it starts and whenever you press
+`R` in the browser. It uses filenames and folders to infer titles, seasons,
+and episodes without looking up online metadata.
 
 - Recognizes common video extensions, including MKV, MP4, MOV, AVI, and WebM.
 - Handles release names such as `Show.S02E10`, `Show 2x10`, and anime
