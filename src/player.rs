@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{self, Progress, Store},
+    db::{self, Identity, Progress, Store},
     library::Media,
 };
 use anyhow::{Context, Result, bail};
@@ -24,6 +24,8 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
         .prefix("wvd-")
         .permissions(Permissions::from_mode(0o700))
         .tempdir_in("/tmp")?;
+    // Read before mpv opens the file, so every checkpoint describes the video being played.
+    let identity = Identity::of(&media.path);
     let socket_path = temporary.path().join("mpv.sock");
     let log_path = temporary.path().join("mpv.log");
     let log = File::create(&log_path)?;
@@ -136,6 +138,7 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
             save(
                 store,
                 media,
+                identity,
                 &mut progress,
                 config.completion_threshold,
                 eof,
@@ -151,6 +154,7 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
         save(
             store,
             media,
+            identity,
             &mut progress,
             config.completion_threshold,
             eof,
@@ -172,6 +176,7 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
 fn save(
     store: &Store,
     media: &Media,
+    identity: Identity,
     progress: &mut Progress,
     threshold: f64,
     eof: bool,
@@ -179,7 +184,7 @@ fn save(
     progress.updated = db::now();
     progress.watched =
         eof || (progress.duration > 0.0 && progress.position / progress.duration >= threshold);
-    store.save_playback(&media.path, progress)
+    store.save_playback(&media.path, progress, identity)
 }
 
 fn apply_event(
@@ -323,6 +328,7 @@ mod tests {
                     position: 2.5,
                     ..saved.clone()
                 },
+                Identity::of(&media.path),
             )
             .unwrap();
         replayed_early(&Progress::default());

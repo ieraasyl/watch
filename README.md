@@ -145,8 +145,14 @@ and episodes without looking up online metadata.
 - Reports unreadable or missing roots while keeping readable media available.
 
 Ambiguous names can remain separate titles. Use `[titles]` in the config to
-correct grouping. History follows each file's canonical path, so moving or
-renaming a file gives it a fresh history entry.
+correct grouping.
+
+History is stored per file path. If you move or rename a video, `wvd`
+recognizes it by its size and a fingerprint of its contents on the next scan
+and restores its progress. The entry for the old path is kept, so a video on
+a disconnected drive still has its history when the drive returns. History
+saved by older versions of `wvd` gets a fingerprint the next time `wvd` finds
+the file, so a video moved before then starts fresh.
 
 ## Development
 

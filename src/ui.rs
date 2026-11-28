@@ -103,6 +103,13 @@ impl Browser {
         }
     }
 
+    /// Show a message in the status line until the next key press.
+    pub fn inform(&mut self, message: Option<String>) {
+        if message.is_some() {
+            self.feedback = message;
+        }
+    }
+
     fn refresh(&mut self, library: &Library, history: &HashMap<PathBuf, Progress>) {
         let previous_media = self.selected().map(|media| media.path);
         let previous = self
@@ -298,12 +305,19 @@ impl Browser {
                         .terminal
                         .draw(|frame| self.draw(frame, library, &history))?;
                     *library = Library::scan(config);
+                    let restored = store.reattach(library.items().map(|item| item.path.as_path()));
                     history = store.all()?;
                     self.refresh(library, &history);
                     self.feedback = library
                         .warnings
                         .is_empty()
                         .then(|| format!("Library refreshed ({} videos)", library.items().count()));
+                    if let Some(message) = restored_message(restored) {
+                        self.feedback = Some(match self.feedback.take() {
+                            Some(refreshed) => format!("{refreshed}. {message}"),
+                            None => message,
+                        });
+                    }
                 }
                 KeyCode::Enter if !self.episodes_focus => self.episodes_focus = true,
                 KeyCode::Enter | KeyCode::Char('r') if self.episodes_focus => {
@@ -574,6 +588,17 @@ impl Browser {
                 area,
             );
         }
+    }
+}
+
+/// Describe the result of `Store::reattach`. Restoring history is best effort, so a failure,
+/// such as another wvd holding the database, is reported without stopping the browser.
+pub fn restored_message(result: Result<usize>) -> Option<String> {
+    match result {
+        Ok(0) => None,
+        Ok(1) => Some("Restored history for 1 moved video".to_owned()),
+        Ok(count) => Some(format!("Restored history for {count} moved videos")),
+        Err(error) => Some(format!("Could not check for moved videos: {error:#}")),
     }
 }
 
