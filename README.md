@@ -52,9 +52,13 @@ wvd "ao no hako"             # Open with a fuzzy title search
 wvd resume                  # Pick up where you left off
 wvd list                    # Print the library and watched status
 wvd config                  # Show configuration and history file locations
+wvd history export FILE     # Save a copy of your watch history
+wvd history import FILE     # Merge history saved on this or another computer
 ```
 
 The browser needs an interactive terminal. Use `wvd list` in scripts or pipes.
+To search for a title named like a command, such as `history`, put `--` before
+it: `wvd -- history`.
 
 ### Keyboard shortcuts
 
@@ -99,6 +103,22 @@ and preserves its watched status. After an episode finishes naturally, the
 browser offers the next unwatched regular episode and waits for confirmation.
 The prompt and Continue watching can advance to a later numbered season of
 the same series. Unnumbered episodes continue within their own list.
+
+### Back up or move your history
+
+Run `wvd history export ~/wvd-history.sqlite3` to save a copy of your watch
+history. The file must not exist yet. It is safe to export while another `wvd`
+is playing.
+
+To restore it, or to carry it to another computer, run
+`wvd history import ~/wvd-history.sqlite3`. Importing merges with the history
+already there. When both have the same video, the entry updated most recently
+wins, so importing the same file twice changes nothing. Videos stored at
+different paths on the new computer get their history back when `wvd` finds
+them, as long as the files themselves are the same. An entry whose video is
+not at its old path waits until `wvd` finds that video, even on a later run.
+History saved by older versions of `wvd` has no fingerprint, so it applies only
+to videos at the same path.
 
 ### Configuration
 

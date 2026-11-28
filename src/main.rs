@@ -46,6 +46,17 @@ enum Command {
     Resume,
     /// Print configuration and history locations
     Config,
+    /// Back up or merge watch history
+    #[command(subcommand)]
+    History(HistoryCommand),
+}
+
+#[derive(Subcommand)]
+enum HistoryCommand {
+    /// Save a copy of your watch history to a new file
+    Export { file: PathBuf },
+    /// Merge watch history from an exported file, keeping the newest entry for each video
+    Import { file: PathBuf },
 }
 
 fn main() {
@@ -64,6 +75,36 @@ fn run() -> Result<()> {
             paths.config.display(),
             paths.database.display()
         );
+        return Ok(());
+    }
+    if let Some(Command::History(HistoryCommand::Export { file })) = &cli.command {
+        let count = db::Store::open(&paths.database)?.export(file)?;
+        println!("Exported {count} history entries to {}", file.display());
+        return Ok(());
+    }
+    if let Some(Command::History(HistoryCommand::Import { file })) = &cli.command {
+        // Merge before reading the configuration, so a configuration problem cannot block it.
+        let mut store = db::Store::open(&paths.database)?;
+        let imported = store.import(file)?;
+        println!(
+            "Imported {} new and {} updated history entries. Skipped {} that were not newer",
+            imported.added, imported.updated, imported.kept
+        );
+        if imported.displaced > 0 {
+            println!(
+                "Kept {} entries until wvd finds their videos",
+                imported.displaced
+            );
+        }
+        // The import is already saved, so library problems are reported without failing it.
+        let explicit = cli.config.is_some();
+        match restore_imported(explicit, &cli.roots, &paths, &mut store) {
+            Ok(Some(message)) => println!("{message}"),
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("wvd: Could not check your library for moved videos: {error:#}")
+            }
+        }
         return Ok(());
     }
     let mut config = Config::load(&paths.config, cli.config.is_some())?;
@@ -136,6 +177,25 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Scan the library and restore imported history to moved videos.
+fn restore_imported(
+    explicit_config: bool,
+    roots: &[PathBuf],
+    paths: &Paths,
+    store: &mut db::Store,
+) -> Result<Option<String>> {
+    let mut config = Config::load(&paths.config, explicit_config)?;
+    if !roots.is_empty() {
+        config.media_dirs = roots.to_vec();
+    }
+    let library = Library::scan(&config);
+    for warning in &library.warnings {
+        eprintln!("wvd: {warning}");
+    }
+    let restored = store.reattach(library.items().map(|item| item.path.as_path()))?;
+    Ok(ui::restored_message(Ok(restored)))
 }
 
 fn list(

@@ -26,6 +26,13 @@ pub fn play(media: &Media, previous: &Progress, config: &Config, store: &Store) 
         .tempdir_in("/tmp")?;
     // Read before mpv opens the file, so every checkpoint describes the video being played.
     let identity = Identity::of(&media.path);
+    // History for a different video that used to be at this path is not resumed.
+    let fresh = Progress::default();
+    let previous = if store.holds_other_video(&media.path, identity)? {
+        &fresh
+    } else {
+        previous
+    };
     let socket_path = temporary.path().join("mpv.sock");
     let log_path = temporary.path().join("mpv.log");
     let log = File::create(&log_path)?;
