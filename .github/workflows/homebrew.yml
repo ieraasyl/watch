@@ -118,6 +118,8 @@ jobs:
       cancel-in-progress: false
       # Keep every waiting publish instead of only the newest one.
       queue: max
+    outputs:
+      tap-commit: ${{ steps.publish.outputs.commit }}
     env:
       VERSION: ${{ needs.render.outputs.version }}
     steps:
@@ -132,13 +134,19 @@ jobs:
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
           path: tap
       - name: Publish the formula to the tap
+        id: publish
         working-directory: tap
         run: |
           if [[ -e Formula/wvd.rb ]]; then
-            # Every platform URL must name the same release, or the current version is unknown.
-            versions=$(sed -nE 's#.*/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/.*#\1#p' Formula/wvd.rb | sort -u)
-            if [[ -z "$versions" || "$versions" == *$'\n'* ]]; then
-              echo "Could not read one version from the tap's formula: ${versions:-none}"
+            # All four platform URLs must be release URLs for one version, or the current
+            # version is unknown and could be newer than this one.
+            urls=$(grep -E '^[[:space:]]*url ' Formula/wvd.rb || true)
+            pattern='^[[:space:]]*url "https://github\.com/ieraasyl/wvd/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/wvd-(macos|linux)-(arm64|x86_64)\.tar\.gz"$'
+            matching=$(grep -cE "$pattern" <<< "$urls" || true)
+            versions=$(sed -nE "s#$pattern#\\1#p" <<< "$urls" | sort -u)
+            if [[ $(grep -c . <<< "$urls") -ne 4 || "$matching" -ne 4 || -z "$versions" || "$versions" == *$'\n'* ]]; then
+              echo "Could not read one version from the tap's formula URLs:"
+              printf '%s\n' "${urls:-none}"
               exit 1
             fi
             newest=$(printf '%s\n' "$versions" "$VERSION" | sort -V | tail -n 1)
@@ -152,12 +160,14 @@ jobs:
           git add Formula/wvd.rb
           if git diff --cached --quiet; then
             echo "The tap already has this formula for wvd $VERSION."
+            printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "wvd $VERSION"
           git push origin HEAD
+          printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   verify:
     needs: publish
@@ -165,9 +175,12 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: '1'
       HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      TAP_COMMIT: ${{ needs.publish.outputs.tap-commit }}
     steps:
       - name: Install from the published tap
         run: |
           brew tap ieraasyl/tap
+          # Test the commit this run published, even if a later release has moved the tap on.
+          git -C "$(brew --repository ieraasyl/tap)" -c advice.detachedHead=false checkout "$TAP_COMMIT"
           brew install --formula ieraasyl/tap/wvd
           brew test ieraasyl/tap/wvd
