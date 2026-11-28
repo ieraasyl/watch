@@ -140,11 +140,15 @@ jobs:
           if [[ -e Formula/wvd.rb ]]; then
             # All four platform URLs must be release URLs for one version, or the current
             # version is unknown and could be newer than this one.
-            urls=$(grep -E '^[[:space:]]*url ' Formula/wvd.rb || true)
-            pattern='^[[:space:]]*url "https://github\.com/ieraasyl/wvd/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/wvd-(macos|linux)-(arm64|x86_64)\.tar\.gz"$'
+            # Any url call counts, with or without parentheses, so none can hide from the check.
+            urls=$(grep -E '(^|[^[:alnum:]_])url([[:space:]]|\()' Formula/wvd.rb || true)
+            pattern='^[[:space:]]*url "https://github\.com/ieraasyl/wvd/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/wvd-((macos|linux)-(arm64|x86_64))\.tar\.gz"$'
             matching=$(grep -cE "$pattern" <<< "$urls" || true)
             versions=$(sed -nE "s#$pattern#\\1#p" <<< "$urls" | sort -u)
-            if [[ $(grep -c . <<< "$urls") -ne 4 || "$matching" -ne 4 || -z "$versions" || "$versions" == *$'\n'* ]]; then
+            platforms=$(sed -nE "s#$pattern#\\2#p" <<< "$urls" | sort | tr '\n' ' ')
+            if [[ $(grep -c . <<< "$urls") -ne 4 || "$matching" -ne 4 \
+              || "$platforms" != "linux-arm64 linux-x86_64 macos-arm64 macos-x86_64 " \
+              || -z "$versions" || "$versions" == *$'\n'* ]]; then
               echo "Could not read one version from the tap's formula URLs:"
               printf '%s\n' "${urls:-none}"
               exit 1
