@@ -17,68 +17,139 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: homebrew-formula
-  cancel-in-progress: false
-
 jobs:
-  formula:
+  render:
     if: github.event_name != 'release' || !github.event.release.prerelease
-    runs-on: macos-15
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      HOMEBREW_NO_AUTO_UPDATE: '1'
-      HOMEBREW_NO_INSTALL_CLEANUP: '1'
-      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.render.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Render the formula from the release checksums
+        id: render
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           # Pull requests check the formula against the latest published release.
-          tag=${RELEASE_TAG:-$(gh release view --json tagName --jq .tagName)}
-          draft=$(gh release view --json isDraft --jq .isDraft -- "$tag")
-          if [[ "$draft" != "false" ]]; then
-            echo "Publish $tag before updating the formula."
+          tag=${INPUT_TAG:-$(gh release view --json tagName --jq .tagName)}
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags look like v1.2.3, not $tag"
+            exit 1
+          fi
+          state=$(gh release view --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"' -- "$tag")
+          if [[ "$state" != "false false" ]]; then
+            echo "$tag must be a published release, not a draft or prerelease."
             exit 1
           fi
           gh release download --pattern SHA256SUMS --dir "$RUNNER_TEMP" -- "$tag"
-          packaging/homebrew/render-formula.sh "${tag#v}" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/wvd.rb"
-          printf 'FORMULA_VERSION=%s\n' "${tag#v}" >> "$GITHUB_ENV"
+          mkdir -p formula
+          packaging/homebrew/render-formula.sh "${tag#v}" "$RUNNER_TEMP/SHA256SUMS" > formula/wvd.rb
+          printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: formula
+          path: formula/wvd.rb
+          if-no-files-found: error
+
+  test:
+    name: Test on ${{ matrix.platform }}
+    needs: render
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x86_64
+            runner: macos-15-intel
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: formula
+          path: ${{ runner.temp }}/formula
+      - name: Set up Homebrew on Linux
+        if: runner.os == 'Linux'
+        env:
+          # Homebrew/install at a fixed commit, for runner images that ship without Homebrew.
+          INSTALLER: https://raw.githubusercontent.com/Homebrew/install/e09ddecb4d4f4a3e776c00c62e010276133d1eed/install.sh
+        run: |
+          prefix=/home/linuxbrew/.linuxbrew
+          if [[ ! -x "$prefix/bin/brew" ]]; then
+            curl -fsSL "$INSTALLER" -o "$RUNNER_TEMP/install-homebrew.sh"
+            NONINTERACTIVE=1 bash "$RUNNER_TEMP/install-homebrew.sh"
+          fi
+          printf '%s\n' "$prefix/bin" "$prefix/sbin" >> "$GITHUB_PATH"
       - name: Install, test, and audit the formula
         run: |
           brew tap-new --no-git local/wvd
-          cp "$RUNNER_TEMP/wvd.rb" "$(brew --repository local/wvd)/Formula/wvd.rb"
+          cp "$RUNNER_TEMP/formula/wvd.rb" "$(brew --repository local/wvd)/Formula/wvd.rb"
           brew install --formula local/wvd/wvd
           brew test local/wvd/wvd
           brew audit --strict --formula local/wvd/wvd
-          brew uninstall --formula wvd
+
+  publish:
+    needs: [render, test]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    # The environment only admits main and release tags, so unreviewed branches never get the key.
+    environment: release
+    concurrency:
+      group: homebrew-publish
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.render.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: formula
+          path: ${{ runner.temp }}/formula
       - name: Check out the tap
-        if: github.event_name != 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ieraasyl/homebrew-tap
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
           path: tap
       - name: Publish the formula to the tap
-        if: github.event_name != 'pull_request'
         working-directory: tap
         run: |
+          current=$(sed -nE 's#.*/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/.*#\1#p' Formula/wvd.rb 2>/dev/null | head -n 1)
+          newest=$(printf '%s\n' "$current" "$VERSION" | sort -V | tail -n 1)
+          if [[ -n "$current" && "$current" != "$VERSION" && "$newest" == "$current" ]]; then
+            echo "The tap has wvd $current, which is newer than $VERSION."
+            exit 1
+          fi
           mkdir -p Formula
-          cp "$RUNNER_TEMP/wvd.rb" Formula/wvd.rb
-          if git diff --quiet --exit-code -- Formula/wvd.rb && git ls-files --error-unmatch Formula/wvd.rb >/dev/null 2>&1; then
-            echo "The tap already has wvd $FORMULA_VERSION."
+          cp "$RUNNER_TEMP/formula/wvd.rb" Formula/wvd.rb
+          git add Formula/wvd.rb
+          if git diff --cached --quiet; then
+            echo "The tap already has this formula for wvd $VERSION."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Formula/wvd.rb
-          git commit -m "wvd $FORMULA_VERSION"
+          git commit -m "wvd $VERSION"
           git push origin HEAD
+
+  verify:
+    needs: publish
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
       - name: Install from the published tap
-        if: github.event_name != 'pull_request'
         run: |
           brew tap ieraasyl/tap
           brew install --formula ieraasyl/tap/wvd
