@@ -21,7 +21,13 @@ On Linux, install mpv with your distribution's package manager.
 
 #### Install without Homebrew
 
-Install mpv for playback, as above. Then download the archive for your computer. If you're unsure which CPU you have,
+Install mpv for playback. On macOS, use a build from the
+[mpv installation guide](https://mpv.io/installation/). If you installed the
+`mpv.app` bundle, set `player = "/Applications/mpv.app/Contents/MacOS/mpv"` in
+your [configuration](#configuration), because the app does not put `mpv` on
+your `PATH`. On Linux, use your distribution's package manager.
+
+Download the archive for your computer. If you're unsure which CPU you have,
 run `uname -m` in Terminal. Linux usually reports `aarch64` for ARM64.
 
 | Computer | Download |
@@ -231,14 +237,23 @@ request changes the manifest, lockfile, toolchain pin, or audit workflow.
 
 ### Build release downloads
 
-1. Push a tag such as `v0.2.0` that matches the version in `Cargo.toml`, and
-   create a draft GitHub release for that tag.
+1. On an up-to-date `main`, push a tag such as `v0.2.0` that matches the
+   version in `Cargo.toml`, and create a draft GitHub release for that tag.
+   Only repository admins can create `v*` tags, and nobody can move or delete
+   them.
 2. Run **Release binaries** from `main` in GitHub Actions and enter the tag.
    The workflow builds and tests each archive from that tagged source.
-3. Publish the draft after it contains the four archives and `SHA256SUMS`.
-   Publishing runs **Homebrew formula**, which tests the formula and pushes it
-   to [ieraasyl/homebrew-tap](https://github.com/ieraasyl/homebrew-tap). To
-   retry, run it from `main` and enter the tag.
+3. Wait until the latest **Release binaries** run for the tag has succeeded,
+   then check that the draft contains the four archives and `SHA256SUMS`, and
+   publish it. A rerun replaces the files one at a time, so publishing during a
+   run can pair new checksums with an old archive. Releases are immutable once
+   published, so a fix needs a new version.
+   Publishing runs **Homebrew formula**, which tests the formula on all four
+   platforms and pushes it to [ieraasyl/homebrew-tap](https://github.com/ieraasyl/homebrew-tap).
+   To retry, run it from `main` and enter the tag. Only `main` and release tags
+   can use the `release` environment that holds the tap's deploy key. The
+   workflow publishes only immutable releases and refuses to replace a newer
+   formula with an older version.
 
 ## License
 

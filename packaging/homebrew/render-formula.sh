@@ -75,13 +75,11 @@ class Wvd < Formula
 
   test do
     assert_equal "wvd #{version}", shell_output("#{bin}/wvd --version").strip
+    # Tests run inside testpath, so relative paths avoid quoting it.
     (testpath/"config.toml").write ""
     (testpath/"media").mkpath
     touch testpath/"media/Show - 01.mkv"
-    output = shell_output(
-      "#{bin}/wvd --config #{testpath}/config.toml --data-dir #{testpath}/history " \\
-      "--root #{testpath}/media list",
-    )
+    output = shell_output("#{bin}/wvd --config config.toml --data-dir history --root media list")
     assert_match "Episode 01  [Unwatched]", output
   end
 end
