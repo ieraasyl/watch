@@ -75,6 +75,13 @@ fn run() -> Result<()> {
         eprintln!("wvd: {warning}");
     }
     let mut store = db::Store::open(&paths.database)?;
+    let restored =
+        ui::restored_message(store.reattach(library.items().map(|item| item.path.as_path())));
+    if matches!(cli.command, Some(Command::List | Command::Resume))
+        && let Some(message) = &restored
+    {
+        eprintln!("wvd: {message}");
+    }
     let progress = store.all()?;
     if matches!(cli.command, Some(Command::List)) {
         return match list(&library, &progress, io::stdout().lock()) {
@@ -97,6 +104,7 @@ fn run() -> Result<()> {
             restart: false,
         }
     } else {
+        browser.inform(restored);
         browser.run(&mut library, &config, &mut store)?
     };
     loop {
