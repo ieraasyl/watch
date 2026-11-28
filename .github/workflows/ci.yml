@@ -24,9 +24,12 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
-      - name: Install mpv
+      - name: Install mpv on Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mpv
+      - name: Install mpv on macOS
+        if: runner.os == 'macOS'
+        run: brew install mpv
       - name: Verify real mpv playback
-        if: runner.os == 'Linux'
+        timeout-minutes: 5
         run: cargo test --locked real_mpv -- --ignored
