@@ -236,7 +236,7 @@ mod tests {
     fn real_mpv_saves_on_quit_then_resumes_to_completion() {
         let dir = tempfile::tempdir().unwrap();
         let audio = dir.path().join("episode.wav");
-        let samples = 48_000_u32 * 3;
+        let samples = 48_000_u32 * 5;
         let size = samples * 2;
         let mut wave = Vec::new();
         wave.extend_from_slice(b"RIFF");
@@ -256,10 +256,21 @@ mod tests {
         let wrapper = dir.path().join("headless-mpv");
         std::fs::write(
             dir.path().join("quit.lua"),
-            "mp.add_timeout(0.4, function() mp.commandv('quit') end)",
+            // mpv starts paused, so the position read after the initial seek cannot run ahead.
+            // Playback resumes once it is recorded, then quits after advancing a full second,
+            // which leaves wvd time to subscribe over IPC and record a checkpoint.
+            "local start\n\
+             mp.register_event('playback-restart', function()\n\
+                 if start then return end\n\
+                 start = mp.get_property_number('time-pos', 0)\n\
+                 mp.set_property_bool('pause', false)\n\
+             end)\n\
+             mp.observe_property('time-pos', 'number', function(_, pos)\n\
+                 if start and pos and pos > start + 1 then mp.commandv('quit') end\n\
+             end)\n",
         )
         .unwrap();
-        let quit_early = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null --script=\"${0%/*}/quit.lua\" \"$@\"\n";
+        let quit_early = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null --pause --script=\"${0%/*}/quit.lua\" \"$@\"\n";
         std::fs::write(&wrapper, quit_early).unwrap();
         std::fs::set_permissions(&wrapper, Permissions::from_mode(0o700)).unwrap();
         let media = crate::library::parse(audio, None);
@@ -268,27 +279,53 @@ mod tests {
             ..Config::default()
         };
         let store = Store::open(&dir.path().join("history.sqlite3")).unwrap();
+        // Far enough in that a launch from zero would quit before passing it.
         let previous = Progress {
-            position: 0.25,
+            position: 1.0,
             ..Progress::default()
         };
         assert!(!play(&media, &previous, &config, &store).unwrap());
         let partial = store.all().unwrap()[&media.path].clone();
         assert!(!partial.watched);
-        assert!(partial.position > previous.position);
+        assert!(partial.position > previous.position + 0.5, "{partial:?}");
+        // Resume from the saved checkpoint and advance about a second past it.
+        let checkpoint = partial;
+        assert!(!play(&media, &checkpoint, &config, &store).unwrap());
+        let partial = store.all().unwrap()[&media.path].clone();
+        assert!(!partial.watched);
+        assert!(
+            partial.position > checkpoint.position + 0.5,
+            "{checkpoint:?} -> {partial:?}"
+        );
         let play_through = "#!/bin/sh\nexec mpv --no-config --vo=null --ao=null \"$@\"\n";
         std::fs::write(&wrapper, play_through).unwrap();
         assert!(play(&media, &partial, &config, &store).unwrap());
         let history = store.all().unwrap();
         let saved = &history[&media.path];
         assert!(saved.watched);
-        assert!(saved.position >= 0.25);
+        assert!(saved.position >= previous.position);
         assert!(saved.duration > 0.9);
 
+        // Replays start from zero, save their new position, and keep the watched status.
         std::fs::write(&wrapper, quit_early).unwrap();
-        assert!(!play(&media, saved, &config, &store).unwrap());
-        assert!(!play(&media, &Progress::default(), &config, &store).unwrap());
-        assert!(store.all().unwrap()[&media.path].watched);
+        let replayed_early = |previous: &Progress| {
+            let before = store.all().unwrap()[&media.path].position;
+            assert!(!play(&media, previous, &config, &store).unwrap());
+            let replay = store.all().unwrap()[&media.path].clone();
+            assert!(replay.watched);
+            assert!(replay.position < before, "{replay:?}");
+        };
+        replayed_early(saved);
+        store
+            .save_playback(
+                &media.path,
+                &Progress {
+                    position: 2.5,
+                    ..saved.clone()
+                },
+            )
+            .unwrap();
+        replayed_early(&Progress::default());
 
         std::fs::write(&wrapper, play_through).unwrap();
         let missing = Media {
