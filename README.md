@@ -9,10 +9,19 @@ library, play in mpv, and pick up where you left off.
 
 ### Install
 
-Install mpv for playback. On macOS with Homebrew, run `brew install mpv`.
-On Linux, use your distribution's package manager. [mpv installation guide](https://mpv.io/installation/)
+With [Homebrew](https://brew.sh), run the following command. On macOS it also
+installs mpv for playback. Run `brew upgrade wvd` to update later.
 
-Download the archive for your computer. If you're unsure which CPU you have,
+```sh
+brew install ieraasyl/tap/wvd
+```
+
+On Linux, install mpv with your distribution's package manager.
+[mpv installation guide](https://mpv.io/installation/)
+
+#### Install without Homebrew
+
+Install mpv for playback, as above. Then download the archive for your computer. If you're unsure which CPU you have,
 run `uname -m` in Terminal. Linux usually reports `aarch64` for ARM64.
 
 | Computer | Download |
@@ -216,7 +225,7 @@ cargo test --locked real_mpv -- --ignored  # Optional playback test, requires mp
 The mpv test generates a silent audio fixture and uses null audio/video outputs
 to check quitting, saved progress, resuming, completion, rewatches, and playback
 errors without opening a window or touching your library. [CI](.github/workflows/ci.yml)
-runs the checks on macOS and Linux, with the mpv test on Linux.
+runs the checks and the mpv test on macOS and Linux.
 The [dependency audit](.github/workflows/audit.yml) runs weekly and when a pull
 request changes the manifest, lockfile, toolchain pin, or audit workflow.
 
@@ -227,6 +236,9 @@ request changes the manifest, lockfile, toolchain pin, or audit workflow.
 2. Run **Release binaries** from `main` in GitHub Actions and enter the tag.
    The workflow builds and tests each archive from that tagged source.
 3. Publish the draft after it contains the four archives and `SHA256SUMS`.
+   Publishing runs **Homebrew formula**, which tests the formula and pushes it
+   to [ieraasyl/homebrew-tap](https://github.com/ieraasyl/homebrew-tap). To
+   retry, run it from `main` and enter the tag.
 
 ## License
 
