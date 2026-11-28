@@ -33,6 +33,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           INPUT_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          EVENT: ${{ github.event_name }}
         run: |
           # Pull requests check the formula against the latest published release.
           tag=${INPUT_TAG:-$(gh release view --json tagName --jq .tagName)}
@@ -40,9 +41,14 @@ jobs:
             echo "Release tags look like v1.2.3, not $tag"
             exit 1
           fi
-          state=$(gh release view --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"' -- "$tag")
-          if [[ "$state" != "false false" ]]; then
+          state=$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq '"\(.draft) \(.prerelease) \(.immutable)"')
+          if [[ "$state" != "false false "* ]]; then
             echo "$tag must be a published release, not a draft or prerelease."
+            exit 1
+          fi
+          # The formula pins checksums, so only publish releases whose assets cannot change.
+          if [[ "$EVENT" != pull_request && "$state" != *" true" ]]; then
+            echo "$tag is not an immutable release, so its assets could change under the formula."
             exit 1
           fi
           gh release download --pattern SHA256SUMS --dir "$RUNNER_TEMP" -- "$tag"
@@ -54,6 +60,8 @@ jobs:
           name: formula
           path: formula/wvd.rb
           if-no-files-found: error
+          # Re-running all jobs uploads again in the same run.
+          overwrite: true
 
   test:
     name: Test on ${{ matrix.platform }}
@@ -108,6 +116,8 @@ jobs:
     concurrency:
       group: homebrew-publish
       cancel-in-progress: false
+      # Keep every waiting publish instead of only the newest one.
+      queue: max
     env:
       VERSION: ${{ needs.render.outputs.version }}
     steps:
@@ -124,11 +134,18 @@ jobs:
       - name: Publish the formula to the tap
         working-directory: tap
         run: |
-          current=$(sed -nE 's#.*/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/.*#\1#p' Formula/wvd.rb 2>/dev/null | head -n 1)
-          newest=$(printf '%s\n' "$current" "$VERSION" | sort -V | tail -n 1)
-          if [[ -n "$current" && "$current" != "$VERSION" && "$newest" == "$current" ]]; then
-            echo "The tap has wvd $current, which is newer than $VERSION."
-            exit 1
+          if [[ -e Formula/wvd.rb ]]; then
+            # Every platform URL must name the same release, or the current version is unknown.
+            versions=$(sed -nE 's#.*/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/.*#\1#p' Formula/wvd.rb | sort -u)
+            if [[ -z "$versions" || "$versions" == *$'\n'* ]]; then
+              echo "Could not read one version from the tap's formula: ${versions:-none}"
+              exit 1
+            fi
+            newest=$(printf '%s\n' "$versions" "$VERSION" | sort -V | tail -n 1)
+            if [[ "$versions" != "$VERSION" && "$newest" == "$versions" ]]; then
+              echo "The tap has wvd $versions, which is newer than $VERSION."
+              exit 1
+            fi
           fi
           mkdir -p Formula
           cp "$RUNNER_TEMP/formula/wvd.rb" Formula/wvd.rb
