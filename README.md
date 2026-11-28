@@ -243,8 +243,11 @@ request changes the manifest, lockfile, toolchain pin, or audit workflow.
    them.
 2. Run **Release binaries** from `main` in GitHub Actions and enter the tag.
    The workflow builds and tests each archive from that tagged source.
-3. Publish the draft after it contains the four archives and `SHA256SUMS`.
-   Releases are immutable once published, so a fix needs a new version.
+3. Wait until the latest **Release binaries** run for the tag has succeeded,
+   then check that the draft contains the four archives and `SHA256SUMS`, and
+   publish it. A rerun replaces the files one at a time, so publishing during a
+   run can pair new checksums with an old archive. Releases are immutable once
+   published, so a fix needs a new version.
    Publishing runs **Homebrew formula**, which tests the formula on all four
    platforms and pushes it to [ieraasyl/homebrew-tap](https://github.com/ieraasyl/homebrew-tap).
    To retry, run it from `main` and enter the tag. Only `main` and release tags
